@@ -19,7 +19,6 @@ export const Booking = ({
   ],
   onOpenSOP 
 }: BookingProps) => {
-=======
 
   const [formData, setFormData] = useState({
     name: '',
