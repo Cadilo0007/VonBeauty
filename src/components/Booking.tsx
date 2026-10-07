@@ -19,6 +19,8 @@ export const Booking = ({
   ],
   onOpenSOP 
 }: BookingProps) => {
+=======
+
   const [formData, setFormData] = useState({
     name: '',
     email: '',
@@ -70,7 +72,7 @@ export const Booking = ({
         type: "success",
         text: "Booking request sent successfully! I’ll contact you soon.",
       });
-
+  
       setFormData({
         name: "",
         email: "",
@@ -82,10 +84,12 @@ export const Booking = ({
       });
     } catch (error) {
       console.error(error);
+
       handleFirestoreError(error, OperationType.WRITE, 'bookings');
       setMessage({
         type: "error",
         text: "Something went wrong. Please try again later.",
+
       });
     } finally {
       setLoading(false);

@@ -1,3 +1,4 @@
+
 import React, { useState } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import { X, Lock, Mail } from 'lucide-react';
@@ -128,3 +129,4 @@ export function AuthModal({ isOpen, onClose, onSuccess }: AuthModalProps) {
     </AnimatePresence>
   );
 }
+

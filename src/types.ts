@@ -11,15 +11,18 @@ export interface CategoryItem {
   createdAt?: any;
 }
 
+
 export interface UploadedImage {
   id: string;
   src: string;
   file?: File;
   category: ServiceCategory;
+
   gender?: GenderTag;
   title?: string;
   isHidden?: boolean;
   createdAt?: any;
+
 }
 
 export interface BookingData {

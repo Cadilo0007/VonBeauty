@@ -9,5 +9,6 @@ createRoot(document.getElementById('root')!).render(
     <FirebaseProvider>
       <App />
     </FirebaseProvider>
+
   </StrictMode>,
 );
