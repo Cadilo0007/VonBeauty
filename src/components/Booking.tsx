@@ -1,12 +1,28 @@
 import React, { useState, useEffect } from 'react';
 import { motion } from 'motion/react';
 import { Calendar, Clock, User, Mail, MessageSquare, Sparkles } from 'lucide-react';
+import { collection, addDoc, serverTimestamp } from 'firebase/firestore';
+import { db, handleFirestoreError, OperationType } from '../lib/firebase';
 
-export const Booking = () => {
+interface BookingProps {
+  categories?: string[];
+  onOpenSOP?: () => void;
+}
+
+export const Booking = ({ 
+  categories = [
+    'Bridal Makeup',
+    'Event Makeup',
+    'Pageant Makeup',
+    'Photoshoot Makeup',
+    'Transformation'
+  ],
+  onOpenSOP 
+}: BookingProps) => {
   const [formData, setFormData] = useState({
     name: '',
     email: '',
-    service: 'Event Makeup',
+    service: categories[0] || 'Event Makeup',
     date: '',
     time: '',
     notes: '',
@@ -43,39 +59,33 @@ export const Booking = () => {
     setMessage({ type: "", text: "" });
 
     try {
-      const response = await fetch(
-        "https://script.google.com/macros/s/AKfycbxDaYtrSbDufczNnoyjW1A3fqCDFvaHSE6CgfKpopeiMX7uQ6xIv2xi5zvjcBwxpNmZ/exec",
-        {
-          method: "POST",
-          body: JSON.stringify(formData),
-        }
-      );
+      // Save to Firestore
+      const bookingsRef = collection(db, 'bookings');
+      await addDoc(bookingsRef, {
+        ...formData,
+        createdAt: serverTimestamp(),
+      });
 
-      const result = await response.json();
+      setMessage({
+        type: "success",
+        text: "Booking request sent successfully! I’ll contact you soon.",
+      });
 
-      if (result.status === "success") {
-        setMessage({
-          type: "success",
-          text: "Booking request sent successfully! I’ll contact you soon.",
-        });
-
-        setFormData({
-          name: "",
-          email: "",
-          service: "Event Makeup",
-          date: "",
-          time: "",
-          notes: "",
-          status: "Pending"
-        });
-      } else {
-        throw new Error(result.message || "Submission failed");
-      }
+      setFormData({
+        name: "",
+        email: "",
+        service: "Event Makeup",
+        date: "",
+        time: "",
+        notes: "",
+        status: "Pending"
+      });
     } catch (error) {
       console.error(error);
+      handleFirestoreError(error, OperationType.WRITE, 'bookings');
       setMessage({
         type: "error",
-        text: "Something went wrong. Please try again.",
+        text: "Something went wrong. Please try again later.",
       });
     } finally {
       setLoading(false);
@@ -102,6 +112,17 @@ export const Booking = () => {
           <p className="text-luxury-ink/60 font-light tracking-wide max-w-2xl mx-auto leading-relaxed">
             Secure your date for a bespoke beauty transformation. Please provide your details below, and I will personally reach out to confirm your appointment.
           </p>
+          {onOpenSOP && (
+            <div className="pt-2">
+              <button
+                type="button"
+                onClick={onOpenSOP}
+                className="inline-flex items-center gap-2 text-xs uppercase tracking-[0.25em] text-luxury-gold hover:text-luxury-ink border-b border-luxury-gold/40 hover:border-luxury-ink pb-0.5 transition-colors cursor-pointer"
+              >
+                View Studio SOP & Policies
+              </button>
+            </div>
+          )}
         </div>
 
         <div className="max-w-4xl mx-auto">
@@ -152,7 +173,7 @@ export const Booking = () => {
                   onChange={(e) => setFormData({ ...formData, service: e.target.value })}
                   className="w-full bg-white/50 border border-luxury-ink/10 rounded-xl px-4 py-3 focus:outline-none focus:border-luxury-gold transition-colors font-light appearance-none cursor-pointer"
                 >
-                  {services.map((s) => (
+                  {categories.map((s) => (
                     <option key={s} value={s}>{s}</option>
                   ))}
                 </select>

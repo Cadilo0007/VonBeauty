@@ -3,10 +3,22 @@
 
 // export const Process = () => {
 //   const processSteps = [
-//     { title: 'Consultation', desc: 'We start with a personalized consultation to understand your unique style, preferences, and beauty goals.' },
-//     { title: 'Customization', desc: 'Based on our consultation, I create a tailored beauty plan that highlights your natural features and enhances your confidence.' },
-//     { title: 'Experience', desc: 'On the day of your event, I provide a luxurious and relaxing beauty experience, ensuring you look and feel your best.' },
-//     { title: 'Aftercare', desc: 'I offer personalized aftercare tips and support to help you maintain your stunning look long after the event.' }
+//     {
+//       title: "The Consultation",
+//       desc: "A deep dive into your skin, features, and the aesthetic vision you wish to project."
+//     },
+//     {
+//       title: "Skin Alchemy",
+//       desc: "Bespoke preparation using elite serums and techniques to create the perfect canvas."
+//     },
+//     {
+//       title: "Artistic Application",
+//       desc: "Precise, layered artistry tailored to your unique structure and the occasion's lighting."
+//     },
+//     {
+//       title: "The Reveal",
+//       desc: "The final sublime moment where vision becomes reality. Confidence, perfected."
+//     }
 //   ];
 
 //   return (

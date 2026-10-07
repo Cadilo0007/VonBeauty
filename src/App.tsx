@@ -1,6 +1,9 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import { X } from 'lucide-react';
+import { collection, onSnapshot, query, orderBy, where } from 'firebase/firestore';
+import { auth, db, handleFirestoreError, OperationType } from './lib/firebase';
+import { useFirebase } from './components/FirebaseProvider';
 import { Contact } from './components/Contact';
 import { Booking } from './components/Booking';
 import { Navigation } from './components/Navigation';
@@ -8,51 +11,151 @@ import { Hero } from './components/Hero';
 import { AuthModal } from './components/AuthModal';
 import { Dashboard } from './components/Dashboard';
 import { About } from './components/About';
-// import { Process } from './components/Process';
 import { Services } from './components/Services';
 import { Portfolio, FullGallery } from './components/Portfolio';
 import { Testimonials } from './components/Testimonials';
 import { Footer } from './components/Footer';
+import { StudioSOPModal } from './components/StudioSOPModal';
+import { UploadedImage, BookingData, Testimonial, CategoryItem } from './types';
 
 export default function App() {
+  const { user, role, isAdmin, loading } = useFirebase();
   const [isMenuOpen, setIsMenuOpen] = useState(false);
   const [isGalleryOpen, setIsGalleryOpen] = useState(false);
-  const [authModalMode, setAuthModalMode] = useState<'signin' | 'signup' | null>(null);
-  const [userRole, setUserRole] = useState<'guest' | 'client' | 'admin'>('guest');
-  const [userEmail, setUserEmail] = useState<string | null>(null);
+  const [isAuthModalOpen, setIsAuthModalOpen] = useState(false);
+  const [isSOPModalOpen, setIsSOPModalOpen] = useState(false);
   const [currentView, setCurrentView] = useState<'home' | 'dashboard'>('home');
-  const [selectedImage, setSelectedImage] = useState<string | null>(null);
+  const [selectedImage, setSelectedImage] = useState<{ src: string; category?: string; gender?: string; title?: string } | null>(null);
+  
+  // Lifted state (synced with Firebase)
+  const [uploadedImages, setUploadedImages] = useState<UploadedImage[]>([]);
+  const [bookings, setBookings] = useState<BookingData[]>([]);
+  const [testimonials, setTestimonials] = useState<Testimonial[]>([]);
+  const [customCategories, setCustomCategories] = useState<CategoryItem[]>([]);
 
-  const isAuthenticated = userRole !== 'guest';
+  // Default core categories combined with dynamic admin categories
+  const defaultCategories = ['Bridal Makeup', 'Event Makeup', 'Pageant Makeup', 'Photoshoot Makeup', 'Transformation'];
+  const categories = useMemo(() => {
+    const customNames = customCategories.map(c => c.name);
+    return Array.from(new Set([...defaultCategories, ...customNames]));
+  }, [customCategories]);
 
-  const handleAuthSubmit = (role: 'admin' | 'client', email: string) => {
-    setUserRole(role);
-    setUserEmail(email);
-    setCurrentView('dashboard');
-    setAuthModalMode(null);
+  // Simple routing for /admin
+  useEffect(() => {
+    if (window.location.pathname === '/admin') {
+      if (isAdmin) {
+        setCurrentView('dashboard');
+      } else {
+        setIsAuthModalOpen(true);
+      }
+    }
+  }, [isAdmin]);
+
+  useEffect(() => {
+    if (loading) return;
+
+    // --- Firebase Real-time Sync ---
+    // 1. Sync Gallery
+    const galleryQuery = isAdmin 
+      ? query(collection(db, 'gallery'), orderBy('createdAt', 'desc'))
+      : query(collection(db, 'gallery'), where('isHidden', '==', false), orderBy('createdAt', 'desc'));
+    
+    const unsubscribeGallery = onSnapshot(galleryQuery, (snapshot) => {
+      const images = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as UploadedImage));
+      setUploadedImages(images);
+    }, (error) => {
+      handleFirestoreError(error, OperationType.LIST, 'gallery');
+    });
+
+    // 2. Sync Bookings
+    let unsubscribeBookings = () => {};
+    if (isAdmin) {
+      const bookingsQuery = query(collection(db, 'bookings'), orderBy('createdAt', 'desc'));
+      unsubscribeBookings = onSnapshot(bookingsQuery, (snapshot) => {
+        const bks = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as BookingData));
+        setBookings(bks);
+      }, (error) => {
+        handleFirestoreError(error, OperationType.LIST, 'bookings');
+      });
+    } else if (user?.email) {
+      const bookingsQuery = query(collection(db, 'bookings'), where('email', '==', user.email), orderBy('createdAt', 'desc'));
+      unsubscribeBookings = onSnapshot(bookingsQuery, (snapshot) => {
+        const bks = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as BookingData));
+        setBookings(bks);
+      }, (error) => {
+        handleFirestoreError(error, OperationType.LIST, 'bookings');
+      });
+    } else {
+      setBookings([]);
+    }
+
+    // 3. Sync Testimonials
+    const testimonialsQuery = isAdmin
+      ? query(collection(db, 'testimonials'), orderBy('createdAt', 'desc'))
+      : query(collection(db, 'testimonials'), where('status', '==', 'approved'), orderBy('createdAt', 'desc'));
+
+    const unsubscribeTestimonials = onSnapshot(testimonialsQuery, (snapshot) => {
+      const tests = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as Testimonial));
+      setTestimonials(tests);
+    }, (error) => {
+      handleFirestoreError(error, OperationType.LIST, 'testimonials');
+    });
+
+    // 4. Sync Custom Categories
+    const categoriesQuery = query(collection(db, 'categories'), orderBy('createdAt', 'desc'));
+    const unsubscribeCategories = onSnapshot(categoriesQuery, (snapshot) => {
+      const cats = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as CategoryItem));
+      setCustomCategories(cats);
+    }, (error) => {
+      handleFirestoreError(error, OperationType.LIST, 'categories');
+    });
+
+    return () => {
+      unsubscribeGallery();
+      unsubscribeBookings();
+      unsubscribeTestimonials();
+      unsubscribeCategories();
+    };
+  }, [user, role, isAdmin, loading]);
+
+  const isAuthenticated = !!user;
+
+  const handleLogout = async () => {
+    await auth.signOut();
+    setCurrentView('home');
   };
 
-  const handleLogout = () => {
-    setUserRole('guest');
-    setUserEmail(null);
-    setCurrentView('home');
+  const [copied, setCopied] = useState(false);
+
+  const handleShare = (src: string) => {
+    navigator.clipboard.writeText(src);
+    setCopied(true);
+    setTimeout(() => setCopied(false), 2000);
   };
 
   return (
     <div className="min-h-screen overflow-x-hidden selection:bg-luxury-gold selection:text-white">
-      <Navigation
-        isMenuOpen={isMenuOpen}
-        setIsMenuOpen={setIsMenuOpen}
-        onAuthRequest={setAuthModalMode}
-        userRole={userRole}
-        onLogout={handleLogout}
-      />
+      {currentView !== 'dashboard' && (
+        <Navigation
+          isMenuOpen={isMenuOpen}
+          setIsMenuOpen={setIsMenuOpen}
+          onAuthRequest={() => setIsAuthModalOpen(true)}
+          onDashboardRequest={() => setCurrentView('dashboard')}
+          userRole={role}
+          onLogout={handleLogout}
+          onOpenSOP={() => setIsSOPModalOpen(true)}
+        />
+      )}
       <AuthModal
-        isOpen={!!authModalMode}
-        mode={authModalMode ?? 'signin'}
-        onClose={() => setAuthModalMode(null)}
-        onModeChange={setAuthModalMode}
-        onSubmit={handleAuthSubmit}
+        isOpen={isAuthModalOpen}
+        onClose={() => setIsAuthModalOpen(false)}
+        onSuccess={() => setCurrentView('dashboard')}
+      />
+
+      {/* Studio SOP Modal */}
+      <StudioSOPModal
+        isOpen={isSOPModalOpen}
+        onClose={() => setIsSOPModalOpen(false)}
       />
 
       {/* Mobile Menu Overlay */}
@@ -62,7 +165,7 @@ export default function App() {
             initial={{ opacity: 0, y: -100 }}
             animate={{ opacity: 1, y: 0 }}
             exit={{ opacity: 0, y: -100 }}
-            className="fixed inset-0 bg-luxury-ink z-45 flex flex-col items-center justify-center gap-8 text-white text-2xl font-serif italic"
+            className="fixed inset-0 bg-luxury-ink z-45 flex flex-col items-center justify-center gap-7 text-white text-xl sm:text-2xl font-serif italic"
           >
             <button 
               onClick={() => setIsMenuOpen(false)}
@@ -70,33 +173,46 @@ export default function App() {
             >
               <X size={32} />
             </button>
-            <a href="#home" onClick={() => setIsMenuOpen(false)} className="text-white transition-colors duration-200 hover:text-luxury-gold focus:text-luxury-gold focus:outline-none focus-visible:ring-2 focus-visible:ring-luxury-gold/40">Home</a>
-            <a href="#about" onClick={() => setIsMenuOpen(false)} className="text-white transition-colors duration-200 hover:text-luxury-gold focus:text-luxury-gold focus:outline-none focus-visible:ring-2 focus-visible:ring-luxury-gold/40">About</a>
-            <a href="#services" onClick={() => setIsMenuOpen(false)} className="text-white transition-colors duration-200 hover:text-luxury-gold focus:text-luxury-gold focus:outline-none focus-visible:ring-2 focus-visible:ring-luxury-gold/40">Services</a>
-            <a href="#gallery" onClick={() => setIsMenuOpen(false)} className="text-white transition-colors duration-200 hover:text-luxury-gold focus:text-luxury-gold focus:outline-none focus-visible:ring-2 focus-visible:ring-luxury-gold/40">Gallery</a>
-            <a href="#testimonials" onClick={() => setIsMenuOpen(false)} className="text-white transition-colors duration-200 hover:text-luxury-gold focus:text-luxury-gold focus:outline-none focus-visible:ring-2 focus-visible:ring-luxury-gold/40">Reviews</a>
-            <a href="#booking" onClick={() => setIsMenuOpen(false)} className="text-white transition-colors duration-200 hover:text-luxury-gold focus:text-luxury-gold focus:outline-none focus-visible:ring-2 focus-visible:ring-luxury-gold/40">Reserve</a>
-            <a href="#contact" onClick={() => setIsMenuOpen(false)} className="text-white transition-colors duration-200 hover:text-luxury-gold focus:text-luxury-gold focus:outline-none focus-visible:ring-2 focus-visible:ring-luxury-gold/40">Contact</a>
-            {userRole === 'guest' ? (
-              <button
-                onClick={() => {
-                  setAuthModalMode('signin');
-                  setIsMenuOpen(false);
-                }}
-                className="text-white uppercase tracking-[0.3em] border border-white/20 rounded-full px-5 py-3 hover:border-luxury-gold transition-colors"
-              >
-                Admin Login
-              </button>
-            ) : (
-              <button
-                onClick={() => {
-                  handleLogout();
-                  setIsMenuOpen(false);
-                }}
-                className="text-white uppercase tracking-[0.3em] border border-white/20 rounded-full px-5 py-3 hover:border-luxury-gold transition-colors"
-              >
-                Logout
-              </button>
+            <a href="#home" onClick={() => setIsMenuOpen(false)} className="text-white hover:text-luxury-gold transition-colors">Home</a>
+            <a href="#about" onClick={() => setIsMenuOpen(false)} className="text-white hover:text-luxury-gold transition-colors">About</a>
+            <a href="#services" onClick={() => setIsMenuOpen(false)} className="text-white hover:text-luxury-gold transition-colors">Services</a>
+            <a href="#gallery" onClick={() => setIsMenuOpen(false)} className="text-white hover:text-luxury-gold transition-colors">Gallery</a>
+            <button 
+              onClick={() => {
+                setIsMenuOpen(false);
+                setIsSOPModalOpen(true);
+              }}
+              className="text-luxury-gold hover:text-white transition-colors cursor-pointer"
+            >
+              Studio SOP
+            </button>
+            <a href="#testimonials" onClick={() => setIsMenuOpen(false)} className="text-white hover:text-luxury-gold transition-colors">Reviews</a>
+            <a href="#booking" onClick={() => setIsMenuOpen(false)} className="text-white hover:text-luxury-gold transition-colors">Reserve</a>
+            <a href="#contact" onClick={() => setIsMenuOpen(false)} className="text-white hover:text-luxury-gold transition-colors">Contact</a>
+
+            {role !== 'guest' && (
+              <div className="flex flex-col items-center gap-4 pt-4 border-t border-white/10 w-48">
+                {isAdmin && (
+                  <button
+                    onClick={() => {
+                      setCurrentView('dashboard');
+                      setIsMenuOpen(false);
+                    }}
+                    className="text-luxury-gold uppercase tracking-[0.3em] hover:text-white transition-colors text-sm"
+                  >
+                    Go to Dashboard
+                  </button>
+                )}
+                <button
+                  onClick={() => {
+                    handleLogout();
+                    setIsMenuOpen(false);
+                  }}
+                  className="text-white uppercase tracking-[0.3em] border border-white/20 rounded-full px-5 py-2 hover:border-luxury-gold transition-colors text-xs"
+                >
+                  Logout
+                </button>
+              </div>
             )}
           </motion.div>
         )}
@@ -104,41 +220,45 @@ export default function App() {
 
       {currentView === 'dashboard' ? (
         <Dashboard
-          role={userRole}
-          email={userEmail}
+          role={role}
+          email={user?.email || null}
           onBack={() => setCurrentView('home')}
+          onLogout={handleLogout}
+          bookings={bookings}
+          testimonials={testimonials}
+          uploadedImages={uploadedImages}
+          categories={categories}
+          customCategories={customCategories}
+          onOpenSOP={() => setIsSOPModalOpen(true)}
         />
       ) : (
         <>
           <Hero />
 
-          {/* Featured In Section */}
-          {/* <section className="py-12 border-b border-luxury-ink/5 bg-white">
-            <div className="max-w-7xl mx-auto px-6">
-              <p className="text-[10px] uppercase tracking-[0.4em] text-center text-luxury-ink/40 mb-10">As Featured In</p>
-              <div className="flex flex-wrap justify-center items-center gap-12 md:gap-24">
-                <span className="text-2xl md:text-3xl font-serif italic tracking-tighter opacity-40 grayscale hover:opacity-100 hover:grayscale-0 transition-all duration-500 cursor-default">VOGUE</span>
-                <span className="text-xl md:text-2xl font-serif font-bold tracking-[0.2em] opacity-40 grayscale hover:opacity-100 hover:grayscale-0 transition-all duration-500 cursor-default">BAZAAR</span>
-                <span className="text-2xl md:text-3xl font-serif uppercase tracking-widest opacity-40 grayscale hover:opacity-100 hover:grayscale-0 transition-all duration-500 cursor-default">Elle</span>
-                <span className="text-xl md:text-2xl font-serif italic opacity-40 grayscale hover:opacity-100 hover:grayscale-0 transition-all duration-500 cursor-default">Allure</span>
-                <span className="text-2xl md:text-3xl font-serif font-light tracking-tighter opacity-40 grayscale hover:opacity-100 hover:grayscale-0 transition-all duration-500 cursor-default">GLAMOUR</span>
-              </div>
-            </div>
-          </section> */}
-
           <About />
-          {/* <Process /> */}
-          <Services />
+          <Services 
+            uploadedImages={uploadedImages} 
+            setSelectedImage={setSelectedImage}
+          />
           <Portfolio
             setIsGalleryOpen={setIsGalleryOpen}
             setSelectedImage={setSelectedImage}
             isAuthenticated={isAuthenticated}
-            userRole={userRole}
+            userRole={role}
+            uploadedImages={uploadedImages}
+            categories={categories}
           />
-          <Testimonials />
-          <Booking />
+          <Testimonials 
+            testimonials={testimonials} 
+          />
+          <Booking 
+            categories={categories}
+            onOpenSOP={() => setIsSOPModalOpen(true)}
+          />
           <Contact />
-          <Footer />
+          <Footer 
+            onOpenSOP={() => setIsSOPModalOpen(true)}
+          />
         </>
       )}
 
@@ -148,7 +268,9 @@ export default function App() {
         onClose={() => setIsGalleryOpen(false)} 
         setSelectedImage={setSelectedImage} 
         isAuthenticated={isAuthenticated}
-        userRole={userRole}
+        userRole={role}
+        uploadedImages={uploadedImages}
+        categories={categories}
       />
 
       {/* Lightbox Modal */}
@@ -164,13 +286,13 @@ export default function App() {
             <motion.button
               initial={{ opacity: 0, scale: 0.5 }}
               animate={{ opacity: 1, scale: 1 }}
-              className="absolute top-8 right-8 text-white hover:text-luxury-gold transition-colors z-120"
+              className="absolute top-8 right-8 text-white hover:text-luxury-gold transition-colors z-120 cursor-pointer"
               onClick={(e) => {
                 e.stopPropagation();
                 setSelectedImage(null);
               }}
             >
-              <X size={40} strokeWidth={1} />
+              <X size={36} strokeWidth={1.5} />
             </motion.button>
             
             <motion.div
@@ -182,13 +304,50 @@ export default function App() {
               onClick={(e) => e.stopPropagation()}
             >
               <img
-                src={selectedImage}
-                className="max-w-full max-h-[90vh] object-contain rounded-lg shadow-2xl border border-white/10"
-                alt="Enlarged Portfolio"
+                src={selectedImage.src}
+                className="max-w-full max-h-[75vh] object-contain rounded-2xl shadow-2xl border border-white/10"
+                alt={selectedImage.title || "Enlarged Portfolio"}
                 referrerPolicy="no-referrer"
               />
-              <div className="absolute -bottom-12 left-0 right-0 text-center">
-                <p className="text-white/40 text-[10px] uppercase tracking-[0.5em]">Von</p>
+              <div className="absolute -bottom-24 left-0 right-0 flex flex-col items-center gap-3">
+                <div className="flex items-center gap-2">
+                  {selectedImage.category && (
+                    <span className="text-luxury-gold text-xs uppercase tracking-[0.3em] font-semibold">
+                      {selectedImage.category}
+                    </span>
+                  )}
+                  {selectedImage.gender && (
+                    <span className="text-white/60 text-xs uppercase tracking-[0.2em] font-light">
+                      • {selectedImage.gender}
+                    </span>
+                  )}
+                </div>
+                {selectedImage.title && (
+                  <p className="text-white text-sm font-serif italic max-w-md text-center">
+                    {selectedImage.title}
+                  </p>
+                )}
+                <div className="flex gap-3 mt-1">
+                  <button 
+                    onClick={() => {
+                      setSelectedImage(null);
+                      setIsGalleryOpen(false);
+                      document.getElementById('booking')?.scrollIntoView({ behavior: 'smooth' });
+                    }}
+                    className="px-6 py-2 rounded-full bg-luxury-gold text-luxury-ink font-medium text-[10px] uppercase tracking-widest hover:bg-white transition-colors cursor-pointer"
+                  >
+                    Book This Look
+                  </button>
+                  <button 
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      handleShare(selectedImage.src);
+                    }}
+                    className="px-6 py-2 border border-white/20 rounded-full text-white text-[10px] uppercase tracking-widest hover:bg-white/10 transition-all min-w-[100px] cursor-pointer"
+                  >
+                    {copied ? 'Copied!' : 'Share'}
+                  </button>
+                </div>
               </div>
             </motion.div>
           </motion.div>
