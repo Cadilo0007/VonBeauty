@@ -1,10 +1,5 @@
 # Haus of Von / Von Beauty - Bespoke Beauty Experience
 
-A high-end, luxury portfolio and booking application for professional makeup artists and beauty studios. 
-
-Built with a **Serverless Firebase Architecture (Firestore + Auth + Storage)** paired with **React & Vite**. 
----
-
 ## ✨ Features
 
 - **Luxury Editorial UI/UX**: Designed with Tailwind CSS and smooth Framer Motion transitions.
