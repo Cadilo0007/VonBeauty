@@ -23,7 +23,6 @@
 - **Hosting Compatibility**: Vercel, Netlify, Cloudflare Pages, or Firebase Hosting (100% Free Tiers)
 
 ---
-
 ## 💻 Local Development
 
 1. I-install ang dependencies:
