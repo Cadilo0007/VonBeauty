@@ -19,6 +19,7 @@
 //       title: "The Reveal",
 //       desc: "The final sublime moment where vision becomes reality. Confidence, perfected."
 //     }
+
 //   ];
 
 //   return (
