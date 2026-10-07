@@ -1,3 +1,4 @@
+
 import React, { useRef } from 'react';
 import { motion, useScroll, useTransform } from 'motion/react';
 import artistImg from '../assets/img/VonBG.png';
@@ -57,6 +58,26 @@ export const Hero = () => {
         ))}
       </div>
 
+      {/* Decorative Elements */}
+      <div className="absolute inset-0 z-10 pointer-events-none overflow-hidden">
+        <motion.div 
+          initial={{ opacity: 0, x: -100 }}
+          animate={{ opacity: 0.03, x: 0 }}
+          transition={{ duration: 2, delay: 0.5 }}
+          className="absolute top-1/4 -left-10 sm:-left-20 text-[30vw] sm:text-[20vw] font-serif italic text-white select-none whitespace-nowrap"
+        >
+          Artistry
+        </motion.div>
+        <motion.div 
+          initial={{ opacity: 0, x: 100 }}
+          animate={{ opacity: 0.03, x: 0 }}
+          transition={{ duration: 2, delay: 0.8 }}
+          className="absolute bottom-1/4 -right-10 sm:-right-20 text-[30vw] sm:text-[20vw] font-serif italic text-white select-none whitespace-nowrap"
+        >
+          Confidence
+        </motion.div>
+      </div>
+
       <div className="relative z-20 text-center px-6 max-w-5xl">
         <motion.div
           initial={{ opacity: 0, y: 30 }}
@@ -113,34 +134,35 @@ export const Hero = () => {
             initial={{ opacity: 0, y: 20 }}
             animate={{ opacity: 1, y: 0 }}
             transition={{ delay: 1.4, duration: 0.8 }}
-            className="flex flex-col sm:flex-row items-center justify-center gap-4 sm:gap-6 pt-4 sm:pt-8 z-50"
+            className="flex flex-col sm:flex-row items-center justify-center gap-4 sm:gap-6 pt-4 sm:pt-8"
           >
             <a 
               href="#booking" 
-              className="luxury-button inline-flex items-center justify-center w-full sm:w-auto sm:min-w-[220px] bg-luxury-gold text-luxury-ink hover:bg-white hover:text-luxury-ink z-50 transition-all duration-300"
+              className="luxury-button group relative overflow-hidden inline-flex items-center justify-center w-full sm:w-auto sm:min-w-[220px] bg-luxury-gold text-luxury-ink border-luxury-gold hover:text-white"
             >
-              Book Now
+              <span className="relative z-10">Book Your Transformation</span>
+              <div className="absolute inset-0 bg-luxury-ink translate-y-full group-hover:translate-y-0 transition-transform duration-300" />
             </a>
             <a 
-              href="#contact" 
-              className="luxury-button inline-flex items-center justify-center w-full sm:w-auto sm:min-w-[220px] backdrop-blur-sm bg-white/5 border-white/20 hover:bg-white/10 z-50 transition-all duration-300"
+              href="#portfolio" 
+              className="luxury-button inline-flex items-center justify-center w-full sm:w-auto sm:min-w-[220px] backdrop-blur-sm bg-white/5 border-white/20 hover:bg-white/10"
             >
-              Contact Me
+              View Portfolio
             </a>
           </motion.div>
         </motion.div>
       </div>
 
       {/* Trust Indicators / Stats */}
-      <div className="absolute bottom-24 left-0 w-full z-0 hidden md:block">
+      <div className="absolute bottom-24 left-0 w-full z-20 hidden md:block">
         <div className="max-w-7xl mx-auto px-6 flex justify-between items-end opacity-40">
           <div className="space-y-1">
             <p className="text-[10px] uppercase tracking-widest text-luxury-gold">Experience</p>
-            <p className="text-sm font-serif italic text-white">Isabela's Artist</p>
+            <p className="text-sm font-serif italic text-white">Isabela's Premier Artist</p>
           </div>
           <div className="space-y-1 text-right">
             <p className="text-[10px] uppercase tracking-widest text-luxury-gold">Transformations</p>
-            <p className="text-sm font-serif italic text-white">1000+ Clients</p>
+            <p className="text-sm font-serif italic text-white">1000+ Faces Enhanced</p>
           </div>
         </div>
       </div>

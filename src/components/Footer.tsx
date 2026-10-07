@@ -1,15 +1,17 @@
+
 import React from 'react';
 import { MapPin, Phone, Mail, Calendar, Clock, Instagram, Facebook, ArrowUp } from 'lucide-react';
 import { RiTiktokLine } from 'react-icons/ri';
 
 interface FooterProps {
-  onHiddenAdminTrigger: () => void;
+  onOpenSOP?: () => void;
 }
 
-export const Footer = ({ onHiddenAdminTrigger }: FooterProps) => {
+export const Footer = ({ onOpenSOP }: FooterProps) => {
   const scrollToTop = () => {
     window.scrollTo({ top: 0, behavior: 'smooth' });
   };
+
   return (
     <footer className="bg-luxury-ink text-white/60 py-24 px-6 relative overflow-hidden">
       {/* Decorative background element */}
@@ -27,53 +29,23 @@ export const Footer = ({ onHiddenAdminTrigger }: FooterProps) => {
               </p>
             </div>
             
-            <div className="grid grid-cols-2 gap-8">
-              <div className="space-y-4">
-                <p className="text-luxury-gold text-[10px] uppercase tracking-[0.4em]">Hauz of Von Page</p>
-                <div className="flex gap-4">
-                  <a 
-                    href="https://www.instagram.com/haus_of_von_beauty?igsh=bjBuNmQxczNnNGRr&utm_source=qr&fbclid=IwY2xjawRZeMhleHRuA2FlbQIxMABicmlkETFkZlJ1UVdacmdmTXJaMUxCc3J0YwZhcHBfaWQQMjIyMDM5MTc4ODIwMDg5MgABHgrURKzbA3-IjSH4tbnS3DyOl37-wbLadX3BAWQwrAO3fXaxCvGMdWNeCQ1L_aem_d7ecxro0EIcMoR9-8vne5g" 
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="w-10 h-10 rounded-full border border-white/10 flex items-center justify-center hover:bg-luxury-gold hover:border-luxury-gold hover:text-luxury-ink transition-all duration-300"
-                    aria-label="Instagram"
-                  >
-                    <Instagram size={18} />
-                  </a>
-                  <a 
-                    href="https://www.facebook.com/profile.php?id=61569269276857" 
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="w-10 h-10 rounded-full border border-white/10 flex items-center justify-center hover:bg-luxury-gold hover:border-luxury-gold hover:text-luxury-ink transition-all duration-300"
-                    aria-label="Facebook"
-                  >
-                    <Facebook size={18} />
-                  </a>
-                </div>
-              </div>
-              <div className="space-y-4">
-                <p className="text-luxury-gold text-[10px] uppercase tracking-[0.4em]">Main Accounts</p>
-                <div className="flex gap-4">
-                  <a 
-                    href="https://www.facebook.com/share/1Fw38PYQga/?mibextid=wwXIfr" 
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="w-10 h-10 rounded-full border border-white/10 flex items-center justify-center hover:bg-luxury-gold hover:border-luxury-gold hover:text-luxury-ink transition-all duration-300"
-                    aria-label="Facebook"
-                  >
-                    <Facebook size={18} />
-                  </a>
-                  <a 
-                    href="https://www.tiktok.com/@jhon_jv_von?_r=1&_t=ZS-95IoqIEc1dl" 
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="w-10 h-10 rounded-full border border-white/10 flex items-center justify-center hover:bg-luxury-gold hover:border-luxury-gold hover:text-luxury-ink transition-all duration-300"
-                    aria-label="TikTok"
-                  >
-                    <RiTiktokLine size={18} />
-                  </a>
-                </div>
-              </div>
+            <div className="flex gap-4">
+              {[
+                { icon: <Instagram size={18} />, href: "https://www.instagram.com/jv_eugenio?igsh=MWhsZzlqdnV6bDF4NQ%3D%3D&utm_source=qr", label: "Instagram" },
+                { icon: <Facebook size={18} />, href: "https://www.facebook.com/share/1Fw38PYQga/?mibextid=wwXIfr", label: "Facebook" },
+                { icon: <RiTiktokLine size={18} />, href: "https://www.tiktok.com/@jhon_jv_von?_r=1&_t=ZS-95IoqIEc1dl", label: "TikTok" }
+              ].map((social, i) => (
+                <a 
+                  key={i}
+                  href={social.href} 
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="w-10 h-10 rounded-full border border-white/10 flex items-center justify-center hover:bg-luxury-gold hover:border-luxury-gold hover:text-luxury-ink transition-all duration-300"
+                  aria-label={social.label}
+                >
+                  {social.icon}
+                </a>
+              ))}
             </div>
           </div>
 
@@ -91,6 +63,16 @@ export const Footer = ({ onHiddenAdminTrigger }: FooterProps) => {
                   </a>
                 </li>
               ))}
+              {onOpenSOP && (
+                <li>
+                  <button
+                    onClick={onOpenSOP}
+                    className="hover:text-luxury-gold text-white/70 transition-colors duration-300 cursor-pointer"
+                  >
+                    Studio SOP & Policies
+                  </button>
+                </li>
+              )}
             </ul>
           </div>
 
@@ -109,9 +91,6 @@ export const Footer = ({ onHiddenAdminTrigger }: FooterProps) => {
                   </a>
                   <a href="tel:+09358530343" className="flex items-center gap-3 hover:text-white transition-colors">
                     <Phone size={14} className="text-luxury-gold" /> TM +09358530343
-                  </a>
-                  <a href="tel:+09947860153" className="flex items-center gap-3 hover:text-white transition-colors">
-                    <Phone size={14} className="text-luxury-gold" /> DITO +09947860153
                   </a>
                   <a href="mailto:eugeniojv31@gmail.com" className="flex items-center gap-3 hover:text-white transition-colors">
                     <Mail size={14} className="text-luxury-gold" /> eugeniojv31@gmail.com
@@ -137,13 +116,13 @@ export const Footer = ({ onHiddenAdminTrigger }: FooterProps) => {
         </div>
 
         {/* Bottom Bar */}
-        <div className="relative mt-24 pt-10 border-t border-white/5 flex flex-col md:flex-row justify-between items-center gap-8">
+        <div className="mt-24 pt-10 border-t border-white/5 flex flex-col md:flex-row justify-between items-center gap-8">
           <div className="flex flex-col md:flex-row items-center gap-4 md:gap-8 text-[10px] uppercase tracking-[0.2em]">
-            <p>&copy; 2026 Haus of Von Beauty. All Rights Reserved.</p>
-            {/* <div className="flex gap-6">
+            <p>&copy; 2026 Von Luxe Artistry. All Rights Reserved.</p>
+            <div className="flex gap-6">
               <a href="#" className="hover:text-white transition-colors">Privacy Policy</a>
               <a href="#" className="hover:text-white transition-colors">Terms of Service</a>
-            </div> */}
+            </div>
           </div>
           
           <button 
@@ -155,14 +134,6 @@ export const Footer = ({ onHiddenAdminTrigger }: FooterProps) => {
               <ArrowUp size={12} />
             </div>
           </button>
-
-          <button
-            type="button"
-            onClick={onHiddenAdminTrigger}
-            className="absolute right-4 bottom-4 w-10 h-10 opacity-0"
-            aria-hidden="true"
-            tabIndex={-1}
-          />
         </div>
       </div>
 

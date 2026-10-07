@@ -1,13 +1,28 @@
 export type UserRole = 'guest' | 'client' | 'admin';
 
-export type ServiceCategory = 'Event Makeup' | 'Pageant Makeup' | 'Photoshoot Makeup' | 'Bridal Makeup' | 'Transformation';
+export type GenderTag = 'Female' | 'Male' | 'Gender-Inclusive';
+
+export type ServiceCategory = string;
+
+export interface CategoryItem {
+  id: string;
+  name: string;
+  description?: string;
+  createdAt?: any;
+}
+
 
 export interface UploadedImage {
   id: string;
   src: string;
   file?: File;
   category: ServiceCategory;
+
+  gender?: GenderTag;
+  title?: string;
   isHidden?: boolean;
+  createdAt?: any;
+
 }
 
 export interface BookingData {

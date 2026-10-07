@@ -1,24 +1,27 @@
+
 import React, { useState } from 'react';
 import { Star, X, MessageSquarePlus } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
+import { collection, addDoc, serverTimestamp } from 'firebase/firestore';
+import { db, handleFirestoreError, OperationType } from '../lib/firebase';
 import { Testimonial } from '../types';
 
 interface TestimonialsProps {
   testimonials: Testimonial[];
-  setTestimonials: React.Dispatch<React.SetStateAction<Testimonial[]>>;
 }
 
-export const Testimonials = ({ testimonials, setTestimonials }: TestimonialsProps) => {
+export const Testimonials = ({ testimonials }: TestimonialsProps) => {
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [reviewAuthor, setReviewAuthor] = useState('');
   const [reviewText, setReviewText] = useState('');
   const [reviewRating, setReviewRating] = useState(5);
   const [reviewError, setReviewError] = useState('');
   const [reviewSuccess, setReviewSuccess] = useState('');
+  const [loading, setLoading] = useState(false);
 
   const approvedTestimonials = testimonials.filter(t => t.status === 'approved');
 
-  const handleReviewSubmit = (event: React.FormEvent<HTMLFormElement>) => {
+  const handleReviewSubmit = async (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     setReviewError('');
     setReviewSuccess('');
@@ -28,43 +31,53 @@ export const Testimonials = ({ testimonials, setTestimonials }: TestimonialsProp
       return;
     }
 
-    const newReview: Testimonial = {
-      id: `T-${Math.floor(Math.random() * 1000).toString().padStart(3, '0')}`,
-      quote: reviewText.trim(),
-      author: reviewAuthor.trim(),
-      role: 'Client',
-      rating: reviewRating,
-      image: 'https://i.pinimg.com/736x/df/93/58/df935859be8accbcc15d559365d55570.jpg',
-      status: 'pending' // New reviews are pending by default
-    };
+    setLoading(true);
 
-    setTestimonials([newReview, ...testimonials]);
-    setReviewAuthor('');
-    setReviewText('');
-    setReviewRating(5);
-    setReviewSuccess('Thank you! Your review has been submitted for approval.');
-    
-    // Close modal after a short delay on success
-    setTimeout(() => {
-      setIsModalOpen(false);
-      setReviewSuccess('');
-    }, 3000);
+    try {
+      // --- Firebase Submission ---
+      const testimonialsRef = collection(db, 'testimonials');
+      await addDoc(testimonialsRef, {
+        quote: reviewText.trim(),
+        author: reviewAuthor.trim(),
+        role: 'Client',
+        rating: reviewRating,
+        image: 'https://i.pinimg.com/736x/df/93/58/df935859be8accbcc15d559365d55570.jpg',
+        status: 'pending',
+        createdAt: serverTimestamp(),
+      });
+
+      setReviewAuthor('');
+      setReviewText('');
+      setReviewRating(5);
+      setReviewSuccess('Thank you! Your review has been submitted for approval.');
+      
+      setTimeout(() => {
+        setIsModalOpen(false);
+        setReviewSuccess('');
+      }, 3000);
+    } catch (error) {
+      console.error(error);
+      handleFirestoreError(error, OperationType.WRITE, 'testimonials');
+      setReviewError('Something went wrong. Please try again later.');
+    } finally {
+      setLoading(false);
+    }
   };
 
   return (
-    <section id="testimonials" className="py-32 bg-white overflow-hidden">
-      <div className="text-center mb-24 px-6">
-        <Star className="text-luxury-gold mx-auto mb-6" size={32} fill="currentColor" />
-        <h2 className="text-5xl font-serif italic">Trusted by Clients</h2>
+    <section id="testimonials" className="py-16 sm:py-24 lg:py-32 bg-white overflow-hidden">
+      <div className="text-center mb-12 sm:mb-20 lg:mb-24 px-6">
+        <Star className="text-luxury-gold mx-auto mb-4 sm:mb-6" size={24} fill="currentColor" />
+        <h2 className="text-3xl sm:text-4xl md:text-5xl font-serif italic">Trusted by Clients</h2>
       </div>
 
       <div className="relative overflow-hidden">
         {approvedTestimonials.length > 0 ? (
-          <div className="marquee-track gap-8 px-4">
+          <div className="marquee-track gap-4 sm:gap-8 px-4">
             {[...approvedTestimonials, ...approvedTestimonials].map((t, i) => (
               <div 
                 key={i}
-                className="w-75 sm:w-100 md:w-112.5 bg-luxury-cream/30 p-6 sm:p-10 rounded-3xl border border-luxury-ink/5 flex flex-col justify-between"
+                className="w-[280px] sm:w-[400px] md:w-[450px] bg-luxury-cream/30 p-6 sm:p-10 rounded-3xl border border-luxury-ink/5 flex flex-col justify-between"
               >
                 <div className="space-y-6 sm:space-y-8">
                   <div className="flex items-center gap-4">
@@ -138,20 +151,20 @@ export const Testimonials = ({ testimonials, setTestimonials }: TestimonialsProp
                 <X size={24} />
               </button>
 
-              <div className="p-8 sm:p-12">
-                <div className="mb-10">
-                  <p className="text-xs uppercase tracking-[0.35em] text-luxury-gold mb-2">Share your experience</p>
-                  <h3 className="text-4xl font-serif italic">Write a Review</h3>
-                  <p className="text-sm text-luxury-ink/60 mt-4">
+              <div className="p-6 sm:p-10 lg:p-12">
+                <div className="mb-6 sm:mb-10">
+                  <p className="text-[10px] sm:text-xs uppercase tracking-[0.35em] text-luxury-gold mb-2">Share your experience</p>
+                  <h3 className="text-2xl sm:text-3xl lg:text-4xl font-serif italic">Write a Review</h3>
+                  <p className="text-xs sm:text-sm text-luxury-ink/60 mt-3 sm:mt-4">
                     Your feedback helps us maintain the highest standards of beauty and service. 
                     Reviews are moderated before being published.
                   </p>
                 </div>
 
-                <form onSubmit={handleReviewSubmit} className="grid gap-8">
-                  <div className="flex flex-col gap-3">
-                    <label className="text-[10px] uppercase tracking-[0.3em] text-luxury-ink/50 ml-1">Your Rating</label>
-                    <div className="flex items-center gap-3">
+                <form onSubmit={handleReviewSubmit} className="grid gap-6 sm:gap-8">
+                  <div className="flex flex-col gap-2 sm:gap-3">
+                    <label className="text-[9px] sm:text-[10px] uppercase tracking-[0.3em] text-luxury-ink/50 ml-1">Your Rating</label>
+                    <div className="flex items-center gap-2 sm:gap-3">
                       {Array.from({ length: 5 }, (_, index) => (
                         <button
                           key={index}
@@ -161,7 +174,7 @@ export const Testimonials = ({ testimonials, setTestimonials }: TestimonialsProp
                           aria-label={`${index + 1} star${index + 1 === 1 ? '' : 's'}`}
                         >
                           <Star
-                            size={28}
+                            size={24}
                             className={index < reviewRating ? 'text-luxury-gold' : 'text-luxury-ink/10'}
                             fill={index < reviewRating ? 'currentColor' : 'none'}
                           />
@@ -170,23 +183,23 @@ export const Testimonials = ({ testimonials, setTestimonials }: TestimonialsProp
                     </div>
                   </div>
 
-                  <div className="grid gap-3">
-                    <label className="text-[10px] uppercase tracking-[0.3em] text-luxury-ink/50 ml-1">Full Name</label>
+                  <div className="grid gap-2 sm:gap-3">
+                    <label className="text-[9px] sm:text-[10px] uppercase tracking-[0.3em] text-luxury-ink/50 ml-1">Full Name</label>
                     <input
                       type="text"
                       value={reviewAuthor}
                       onChange={(event) => setReviewAuthor(event.target.value)}
-                      className="luxury-input"
+                      className="luxury-input py-2.5 sm:py-3"
                       placeholder="e.g. Maria Santos"
                     />
                   </div>
 
-                  <div className="grid gap-3">
-                    <label className="text-[10px] uppercase tracking-[0.3em] text-luxury-ink/50 ml-1">Your Story</label>
+                  <div className="grid gap-2 sm:gap-3">
+                    <label className="text-[9px] sm:text-[10px] uppercase tracking-[0.3em] text-luxury-ink/50 ml-1">Your Story</label>
                     <textarea
                       value={reviewText}
                       onChange={(event) => setReviewText(event.target.value)}
-                      className="luxury-input min-h-[120px] resize-none"
+                      className="luxury-input min-h-[100px] sm:min-h-[120px] resize-none py-2.5 sm:py-3"
                       placeholder="Tell us about your transformation..."
                     />
                   </div>
@@ -213,9 +226,10 @@ export const Testimonials = ({ testimonials, setTestimonials }: TestimonialsProp
 
                   <button
                     type="submit"
-                    className="luxury-button w-full py-5 text-sm"
+                    disabled={loading}
+                    className="luxury-button w-full py-5 text-sm disabled:opacity-50 disabled:cursor-not-allowed"
                   >
-                    Submit for Approval
+                    {loading ? 'Submitting...' : 'Submit for Approval'}
                   </button>
                 </form>
               </div>

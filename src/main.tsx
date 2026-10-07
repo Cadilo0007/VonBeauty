@@ -1,11 +1,14 @@
 import {StrictMode} from 'react';
 import {createRoot} from 'react-dom/client';
 import App from './App.tsx';
-// @ts-ignore
 import './index.css';
+import { FirebaseProvider } from './components/FirebaseProvider';
 
 createRoot(document.getElementById('root')!).render(
   <StrictMode>
-    <App />
+    <FirebaseProvider>
+      <App />
+    </FirebaseProvider>
+
   </StrictMode>,
 );

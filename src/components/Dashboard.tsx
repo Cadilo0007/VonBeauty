@@ -1,16 +1,19 @@
+
 import React, { useMemo, useState } from 'react';
 import { motion } from 'motion/react';
 import { 
   Search, Users, FileText, ArrowLeft, ChevronRight, 
   CheckCircle2, Clock, XCircle, Trash2, MessageSquare, 
   Star, Eye, EyeOff, LayoutDashboard, Calendar, 
-  Image as ImageIcon, Settings, LogOut, Bell, TrendingUp
+  Image as ImageIcon, Sparkles, LogOut, TrendingUp, Plus, ShieldCheck, Tag
 } from 'lucide-react';
 import { 
   LineChart, Line, XAxis, YAxis, CartesianGrid, 
   Tooltip, ResponsiveContainer, AreaChart, Area 
 } from 'recharts';
-import { BookingData, Testimonial, UploadedImage } from '../types';
+import { doc, updateDoc, deleteDoc, collection, addDoc, serverTimestamp } from 'firebase/firestore';
+import { db, handleFirestoreError, OperationType } from '../lib/firebase';
+import { BookingData, Testimonial, UploadedImage, CategoryItem, GenderTag } from '../types';
 import { ImageUploadForm } from './ImageUploadForm';
 
 interface DashboardProps {
@@ -19,33 +22,43 @@ interface DashboardProps {
   onBack: () => void;
   onLogout: () => void;
   bookings: BookingData[];
-  setBookings: React.Dispatch<React.SetStateAction<BookingData[]>>;
   testimonials: Testimonial[];
-  setTestimonials: React.Dispatch<React.SetStateAction<Testimonial[]>>;
   uploadedImages: UploadedImage[];
-  setUploadedImages: React.Dispatch<React.SetStateAction<UploadedImage[]>>;
+  categories?: string[];
+  customCategories?: CategoryItem[];
+  onOpenSOP?: () => void;
 }
 
 const AdminDashboard = ({ 
   bookings, 
-  setBookings, 
   testimonials, 
-  setTestimonials,
   uploadedImages,
-  setUploadedImages,
+  categories = ['Bridal Makeup', 'Event Makeup', 'Pageant Makeup', 'Photoshoot Makeup', 'Transformation'],
+  customCategories = [],
+  onOpenSOP,
   onLogout
 }: { 
-  bookings: BookingData[], 
-  setBookings: React.Dispatch<React.SetStateAction<BookingData[]>>,
-  testimonials: Testimonial[],
-  setTestimonials: React.Dispatch<React.SetStateAction<Testimonial[]>>,
-  uploadedImages: UploadedImage[],
-  setUploadedImages: React.Dispatch<React.SetStateAction<UploadedImage[]>>,
-  onLogout: () => void
+  bookings: BookingData[]; 
+  testimonials: Testimonial[];
+  uploadedImages: UploadedImage[];
+  categories?: string[];
+  customCategories?: CategoryItem[];
+  onOpenSOP?: () => void;
+  onLogout: () => void;
 }) => {
   const [search, setSearch] = useState('');
   const [selectedBookingId, setSelectedBookingId] = useState<string | null>(null);
-  const [activeTab, setActiveTab] = useState<'overview' | 'bookings' | 'testimonials' | 'gallery'>('overview');
+  const [activeTab, setActiveTab] = useState<'overview' | 'bookings' | 'testimonials' | 'gallery' | 'categories'>('overview');
+  
+  // Gallery filter states in dashboard
+  const [galleryGenderFilter, setGalleryGenderFilter] = useState<'All' | GenderTag>('All');
+  const [galleryCatFilter, setGalleryCatFilter] = useState<string>('All');
+
+  // Category creation form state
+  const [newCatName, setNewCatName] = useState('');
+  const [newCatDesc, setNewCatDesc] = useState('');
+  const [isAddingCat, setIsAddingCat] = useState(false);
+  const [catMessage, setCatMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
 
   // Mock data for the chart based on bookings
   const chartData = useMemo(() => {
@@ -59,7 +72,7 @@ const AdminDashboard = ({
 
   const filteredBookings = useMemo(
     () => bookings.filter((booking) =>
-      booking.id.toLowerCase().includes(search.toLowerCase()) ||
+      booking.id?.toLowerCase().includes(search.toLowerCase()) ||
       booking.name.toLowerCase().includes(search.toLowerCase()) ||
       booking.email.toLowerCase().includes(search.toLowerCase())
     ),
@@ -75,35 +88,107 @@ const AdminDashboard = ({
 
   const selectedBooking = bookings.find((booking) => booking.id === selectedBookingId) || filteredBookings[0] || null;
 
-  const removeUploaded = (id: string) => {
-    setUploadedImages((prev) => {
-      const removed = prev.find((u) => u.id === id);
-      if (removed) URL.revokeObjectURL(removed.src);
-      return prev.filter((u) => u.id !== id);
+  // Filtered gallery in admin
+  const filteredGalleryImages = useMemo(() => {
+    return uploadedImages.filter(img => {
+      const matchGender = galleryGenderFilter === 'All' || img.gender === galleryGenderFilter;
+      const matchCat = galleryCatFilter === 'All' || img.category === galleryCatFilter;
+      return matchGender && matchCat;
     });
-  };
+  }, [uploadedImages, galleryGenderFilter, galleryCatFilter]);
 
-  const toggleHideImage = (id: string) => {
-    setUploadedImages(prev => prev.map(img => img.id === id ? { ...img, isHidden: !img.isHidden } : img));
-  };
-
-  const updateStatus = (id: string, status: BookingData['status']) => {
-    setBookings(prev => prev.map(b => b.id === id ? { ...b, status } : b));
-  };
-
-  const deleteBooking = (id: string) => {
-    if (window.confirm('Are you sure you want to delete this booking?')) {
-      setBookings(prev => prev.filter(b => b.id !== id));
+  const removeUploaded = async (id: string) => {
+    if (window.confirm('Are you sure you want to delete this image permanently?')) {
+      try {
+        await deleteDoc(doc(db, 'gallery', id));
+      } catch (error) {
+        console.error(error);
+        handleFirestoreError(error, OperationType.DELETE, `gallery/${id}`);
+      }
     }
   };
 
-  const approveTestimonial = (id: string) => {
-    setTestimonials(prev => prev.map(t => t.id === id ? { ...t, status: 'approved' } : t));
+  const toggleHideImage = async (id: string, currentHidden: boolean) => {
+    try {
+      await updateDoc(doc(db, 'gallery', id), { isHidden: !currentHidden });
+    } catch (error) {
+      console.error(error);
+      handleFirestoreError(error, OperationType.UPDATE, `gallery/${id}`);
+    }
   };
 
-  const deleteTestimonial = (id: string) => {
+  const updateStatus = async (id: string, status: BookingData['status']) => {
+    try {
+      await updateDoc(doc(db, 'bookings', id), { status });
+    } catch (error) {
+      console.error(error);
+      handleFirestoreError(error, OperationType.UPDATE, `bookings/${id}`);
+    }
+  };
+
+  const deleteBooking = async (id: string) => {
+    if (window.confirm('Are you sure you want to delete this booking?')) {
+      try {
+        await deleteDoc(doc(db, 'bookings', id));
+      } catch (error) {
+        console.error(error);
+        handleFirestoreError(error, OperationType.DELETE, `bookings/${id}`);
+      }
+    }
+  };
+
+  const approveTestimonial = async (id: string) => {
+    try {
+      await updateDoc(doc(db, 'testimonials', id), { status: 'approved' });
+    } catch (error) {
+      console.error(error);
+      handleFirestoreError(error, OperationType.UPDATE, `testimonials/${id}`);
+    }
+  };
+
+  const deleteTestimonial = async (id: string) => {
     if (window.confirm('Are you sure you want to delete this testimonial?')) {
-      setTestimonials(prev => prev.filter(t => t.id !== id));
+      try {
+        await deleteDoc(doc(db, 'testimonials', id));
+      } catch (error) {
+        console.error(error);
+        handleFirestoreError(error, OperationType.DELETE, `testimonials/${id}`);
+      }
+    }
+  };
+
+  const handleAddCategory = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!newCatName.trim()) return;
+
+    setIsAddingCat(true);
+    setCatMessage(null);
+    try {
+      await addDoc(collection(db, 'categories'), {
+        name: newCatName.trim(),
+        description: newCatDesc.trim(),
+        createdAt: serverTimestamp()
+      });
+      setCatMessage({ type: 'success', text: `Category "${newCatName.trim()}" added successfully!` });
+      setNewCatName('');
+      setNewCatDesc('');
+    } catch (err) {
+      console.error(err);
+      handleFirestoreError(err, OperationType.WRITE, 'categories');
+      setCatMessage({ type: 'error', text: 'Failed to add category. Please check permissions.' });
+    } finally {
+      setIsAddingCat(false);
+    }
+  };
+
+  const handleDeleteCategory = async (catId: string, name: string) => {
+    if (window.confirm(`Delete the custom category "${name}"?`)) {
+      try {
+        await deleteDoc(doc(db, 'categories', catId));
+      } catch (err) {
+        console.error(err);
+        handleFirestoreError(err, OperationType.DELETE, `categories/${catId}`);
+      }
     }
   };
 
@@ -114,37 +199,54 @@ const AdminDashboard = ({
         <div className="sticky top-32 space-y-2">
           <button 
             onClick={() => setActiveTab('overview')}
-            className={`w-full flex items-center gap-3 px-6 py-4 rounded-2xl transition-all ${activeTab === 'overview' ? 'bg-luxury-ink text-white shadow-lg' : 'text-luxury-ink/60 hover:bg-white hover:text-luxury-ink'}`}
+            className={`w-full flex items-center gap-3 px-6 py-4 rounded-2xl transition-all cursor-pointer ${activeTab === 'overview' ? 'bg-luxury-ink text-white shadow-lg' : 'text-luxury-ink/60 hover:bg-white hover:text-luxury-ink'}`}
           >
             <LayoutDashboard size={18} />
             <span className="text-sm font-medium">Overview</span>
           </button>
           <button 
             onClick={() => setActiveTab('bookings')}
-            className={`w-full flex items-center gap-3 px-6 py-4 rounded-2xl transition-all ${activeTab === 'bookings' ? 'bg-luxury-ink text-white shadow-lg' : 'text-luxury-ink/60 hover:bg-white hover:text-luxury-ink'}`}
+            className={`w-full flex items-center gap-3 px-6 py-4 rounded-2xl transition-all cursor-pointer ${activeTab === 'bookings' ? 'bg-luxury-ink text-white shadow-lg' : 'text-luxury-ink/60 hover:bg-white hover:text-luxury-ink'}`}
           >
             <Calendar size={18} />
             <span className="text-sm font-medium">Bookings</span>
           </button>
           <button 
             onClick={() => setActiveTab('testimonials')}
-            className={`w-full flex items-center gap-3 px-6 py-4 rounded-2xl transition-all ${activeTab === 'testimonials' ? 'bg-luxury-ink text-white shadow-lg' : 'text-luxury-ink/60 hover:bg-white hover:text-luxury-ink'}`}
+            className={`w-full flex items-center gap-3 px-6 py-4 rounded-2xl transition-all cursor-pointer ${activeTab === 'testimonials' ? 'bg-luxury-ink text-white shadow-lg' : 'text-luxury-ink/60 hover:bg-white hover:text-luxury-ink'}`}
           >
             <MessageSquare size={18} />
             <span className="text-sm font-medium">Reviews</span>
           </button>
           <button 
             onClick={() => setActiveTab('gallery')}
-            className={`w-full flex items-center gap-3 px-6 py-4 rounded-2xl transition-all ${activeTab === 'gallery' ? 'bg-luxury-ink text-white shadow-lg' : 'text-luxury-ink/60 hover:bg-white hover:text-luxury-ink'}`}
+            className={`w-full flex items-center gap-3 px-6 py-4 rounded-2xl transition-all cursor-pointer ${activeTab === 'gallery' ? 'bg-luxury-ink text-white shadow-lg' : 'text-luxury-ink/60 hover:bg-white hover:text-luxury-ink'}`}
           >
             <ImageIcon size={18} />
-            <span className="text-sm font-medium">Gallery</span>
+            <span className="text-sm font-medium">Gallery & Upload</span>
+          </button>
+          <button 
+            onClick={() => setActiveTab('categories')}
+            className={`w-full flex items-center gap-3 px-6 py-4 rounded-2xl transition-all cursor-pointer ${activeTab === 'categories' ? 'bg-luxury-ink text-white shadow-lg' : 'text-luxury-ink/60 hover:bg-white hover:text-luxury-ink'}`}
+          >
+            <Tag size={18} />
+            <span className="text-sm font-medium">Makeup Categories</span>
           </button>
           
-          <div className="pt-8 mt-8 border-t border-luxury-ink/5">
+          <div className="pt-6 mt-6 border-t border-luxury-ink/10 space-y-2">
+            {onOpenSOP && (
+              <button 
+                onClick={onOpenSOP}
+                className="w-full flex items-center gap-3 px-6 py-3.5 rounded-2xl text-luxury-gold bg-luxury-ink/5 hover:bg-luxury-gold/10 transition-all cursor-pointer"
+              >
+                <ShieldCheck size={18} />
+                <span className="text-xs uppercase tracking-wider font-semibold">Studio SOP</span>
+              </button>
+            )}
+
             <button 
               onClick={onLogout}
-              className="w-full flex items-center gap-3 px-6 py-4 rounded-2xl text-red-500/70 hover:bg-red-50 hover:text-red-600 transition-all"
+              className="w-full flex items-center gap-3 px-6 py-3.5 rounded-2xl text-red-500/70 hover:bg-red-50 hover:text-red-600 transition-all cursor-pointer"
             >
               <LogOut size={18} />
               <span className="text-sm font-medium">Sign Out</span>
@@ -195,107 +297,42 @@ const AdminDashboard = ({
               <section className="rounded-[2rem] bg-white p-6 md:p-8 border border-luxury-ink/10 shadow-sm">
                 <div className="flex items-center justify-between mb-8">
                   <h4 className="text-xl font-serif">Booking Trends</h4>
-                  <select className="text-[10px] uppercase tracking-widest bg-transparent border-none focus:ring-0 text-luxury-ink/40">
-                    <option>Last 6 Months</option>
-                    <option>Last Year</option>
-                  </select>
+                  <span className="text-[10px] uppercase tracking-widest text-luxury-ink/40">Real-time stats</span>
                 </div>
-                <div className="h-[300px] w-full">
+                <div className="h-64">
                   <ResponsiveContainer width="100%" height="100%">
                     <AreaChart data={chartData}>
                       <defs>
                         <linearGradient id="colorBookings" x1="0" y1="0" x2="0" y2="1">
-                          <stop offset="5%" stopColor="#D4AF37" stopOpacity={0.1}/>
-                          <stop offset="95%" stopColor="#D4AF37" stopOpacity={0}/>
+                          <stop offset="5%" stopColor="#C5A880" stopOpacity={0.3}/>
+                          <stop offset="95%" stopColor="#C5A880" stopOpacity={0}/>
                         </linearGradient>
                       </defs>
                       <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f0f0f0" />
-                      <XAxis 
-                        dataKey="name" 
-                        axisLine={false} 
-                        tickLine={false} 
-                        tick={{ fontSize: 10, fill: '#999' }} 
-                        dy={10}
-                      />
-                      <YAxis 
-                        axisLine={false} 
-                        tickLine={false} 
-                        tick={{ fontSize: 10, fill: '#999' }} 
-                      />
-                      <Tooltip 
-                        contentStyle={{ 
-                          borderRadius: '16px', 
-                          border: 'none', 
-                          boxShadow: '0 10px 30px rgba(0,0,0,0.1)',
-                          fontSize: '12px'
-                        }} 
-                      />
-                      <Area 
-                        type="monotone" 
-                        dataKey="bookings" 
-                        stroke="#D4AF37" 
-                        strokeWidth={2}
-                        fillOpacity={1} 
-                        fill="url(#colorBookings)" 
-                      />
+                      <XAxis dataKey="name" axisLine={false} tickLine={false} tick={{ fontSize: 12, fill: '#888' }} />
+                      <YAxis axisLine={false} tickLine={false} tick={{ fontSize: 12, fill: '#888' }} />
+                      <Tooltip />
+                      <Area type="monotone" dataKey="bookings" stroke="#C5A880" fillOpacity={1} fill="url(#colorBookings)" strokeWidth={2} />
                     </AreaChart>
                   </ResponsiveContainer>
                 </div>
               </section>
 
               <section className="rounded-[2rem] bg-white p-6 md:p-8 border border-luxury-ink/10 shadow-sm">
-                <div className="flex items-center justify-between mb-8">
-                  <h4 className="text-xl font-serif">Quick Actions</h4>
-                  <Bell size={18} className="text-luxury-ink/20" />
-                </div>
+                <h4 className="text-xl font-serif mb-6">Quick Overview</h4>
                 <div className="space-y-4">
-                  <button 
-                    onClick={() => setActiveTab('bookings')}
-                    className="w-full flex items-center justify-between p-4 rounded-2xl bg-luxury-cream/50 hover:bg-luxury-cream transition-colors group"
-                  >
-                    <div className="flex items-center gap-3">
-                      <div className="w-10 h-10 rounded-full bg-white flex items-center justify-center text-luxury-gold shadow-sm">
-                        <Calendar size={18} />
-                      </div>
-                      <div className="text-left">
-                        <p className="text-sm font-medium">Review Bookings</p>
-                        <p className="text-[10px] text-luxury-ink/40">{bookings.filter(b => b.status === 'Pending').length} pending requests</p>
-                      </div>
-                    </div>
-                    <ChevronRight size={16} className="text-luxury-ink/20 group-hover:text-luxury-gold transition-colors" />
-                  </button>
-
-                  <button 
-                    onClick={() => setActiveTab('testimonials')}
-                    className="w-full flex items-center justify-between p-4 rounded-2xl bg-luxury-cream/50 hover:bg-luxury-cream transition-colors group"
-                  >
-                    <div className="flex items-center gap-3">
-                      <div className="w-10 h-10 rounded-full bg-white flex items-center justify-center text-luxury-gold shadow-sm">
-                        <MessageSquare size={18} />
-                      </div>
-                      <div className="text-left">
-                        <p className="text-sm font-medium">Approve Reviews</p>
-                        <p className="text-[10px] text-luxury-ink/40">{pendingTestimonials.length} new testimonials</p>
-                      </div>
-                    </div>
-                    <ChevronRight size={16} className="text-luxury-ink/20 group-hover:text-luxury-gold transition-colors" />
-                  </button>
-
-                  <button 
-                    onClick={() => setActiveTab('gallery')}
-                    className="w-full flex items-center justify-between p-4 rounded-2xl bg-luxury-cream/50 hover:bg-luxury-cream transition-colors group"
-                  >
-                    <div className="flex items-center gap-3">
-                      <div className="w-10 h-10 rounded-full bg-white flex items-center justify-center text-luxury-gold shadow-sm">
-                        <ImageIcon size={18} />
-                      </div>
-                      <div className="text-left">
-                        <p className="text-sm font-medium">Update Gallery</p>
-                        <p className="text-[10px] text-luxury-ink/40">Add new looks to portfolio</p>
-                      </div>
-                    </div>
-                    <ChevronRight size={16} className="text-luxury-ink/20 group-hover:text-luxury-gold transition-colors" />
-                  </button>
+                  <div className="flex items-center justify-between p-4 bg-luxury-cream/40 rounded-2xl border border-luxury-ink/5">
+                    <span className="text-xs uppercase tracking-wider text-luxury-ink/60">Portfolio Photos</span>
+                    <span className="font-serif text-lg font-bold text-luxury-ink">{uploadedImages.length}</span>
+                  </div>
+                  <div className="flex items-center justify-between p-4 bg-luxury-cream/40 rounded-2xl border border-luxury-ink/5">
+                    <span className="text-xs uppercase tracking-wider text-luxury-ink/60">Active Categories</span>
+                    <span className="font-serif text-lg font-bold text-luxury-ink">{categories.length}</span>
+                  </div>
+                  <div className="flex items-center justify-between p-4 bg-luxury-cream/40 rounded-2xl border border-luxury-ink/5">
+                    <span className="text-xs uppercase tracking-wider text-luxury-ink/60">Customer Reviews</span>
+                    <span className="font-serif text-lg font-bold text-luxury-ink">{testimonials.length}</span>
+                  </div>
                 </div>
               </section>
             </div>
@@ -303,123 +340,156 @@ const AdminDashboard = ({
         )}
 
         {activeTab === 'bookings' && (
-          <section className="rounded-[2rem] bg-white p-6 md:p-8 border border-luxury-ink/10 shadow-sm">
-            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-8">
-              <h4 className="text-xl md:text-2xl font-serif">Booking Management</h4>
-              <div className="w-fit rounded-full bg-luxury-ink/5 px-4 py-2 text-[10px] md:text-xs uppercase tracking-[0.35em] text-luxury-ink">Records</div>
-            </div>
-
-            <div className="flex flex-col gap-4">
-              <div className="relative">
-                <Search className="absolute left-4 top-1/2 -translate-y-1/2 text-luxury-ink/40" />
+          <div className="space-y-6">
+            <div className="flex items-center justify-between gap-4 bg-white p-4 rounded-2xl border border-luxury-ink/10">
+              <div className="relative flex-1">
+                <Search className="absolute left-4 top-1/2 -translate-y-1/2 text-luxury-ink/30" size={16} />
                 <input
+                  type="text"
+                  placeholder="Search bookings by client name, email..."
                   value={search}
-                  onChange={(event) => setSearch(event.target.value)}
-                  placeholder="Search by name, email or ID..."
-                  className="w-full rounded-3xl border border-luxury-ink/10 bg-white/90 py-4 pl-12 pr-4 text-sm focus:border-luxury-gold focus:outline-none"
+                  onChange={(e) => setSearch(e.target.value)}
+                  className="w-full pl-11 pr-4 py-2 bg-transparent text-sm focus:outline-none placeholder:text-luxury-ink/30"
                 />
               </div>
+            </div>
 
-              <div className="grid gap-3">
-                {filteredBookings.length > 0 ? (
-                  filteredBookings.map((booking) => (
-                    <div
-                      key={booking.id}
-                      className={`w-full text-left rounded-3xl border px-4 md:px-5 py-4 transition flex flex-col sm:flex-row sm:items-center justify-between gap-4 ${selectedBooking?.id === booking.id ? 'border-luxury-gold bg-luxury-gold/5' : 'border-luxury-ink/10 bg-white'}`}
-                    >
-                      <button 
-                        onClick={() => setSelectedBookingId(booking.id)}
-                        className="flex-1 text-left"
-                      >
-                        <div className="flex items-center justify-between gap-3">
-                          <span className="font-medium text-sm md:text-base">{booking.name}</span>
-                          <span className={`text-[9px] md:text-[10px] font-bold px-2 py-0.5 rounded-full uppercase tracking-wider ${
-                            booking.status === 'Confirmed' ? 'bg-green-50 text-green-600' :
-                            booking.status === 'Pending' ? 'bg-amber-50 text-amber-600' :
-                            'bg-red-50 text-red-600'
-                          }`}>
-                            {booking.status}
-                          </span>
-                        </div>
-                        <p className="text-xs md:text-sm text-luxury-ink/60 mt-1">{booking.service} · {booking.date} at {booking.time}</p>
-                      </button>
-                      
-                      <div className="flex items-center gap-2 sm:ml-4">
-                        {booking.status === 'Pending' && (
-                          <button 
-                            onClick={() => updateStatus(booking.id, 'Confirmed')}
-                            className="p-2 text-green-600 hover:bg-green-50 rounded-full transition-colors"
-                            title="Confirm"
-                          >
-                            <CheckCircle2 size={18} />
-                          </button>
-                        )}
-                        <button 
-                          onClick={() => deleteBooking(booking.id)}
-                          className="p-2 text-red-600 hover:bg-red-50 rounded-full transition-colors"
-                          title="Delete"
-                        >
-                          <Trash2 size={18} />
-                        </button>
-                      </div>
-                    </div>
-                  ))
-                ) : (
-                  <div className="text-center py-12">
-                    <p className="text-sm text-luxury-ink/40 italic">No bookings found matching your search.</p>
-                  </div>
-                )}
+            <div className="rounded-[2rem] bg-white overflow-hidden border border-luxury-ink/10 shadow-sm">
+              <div className="overflow-x-auto">
+                <table className="w-full text-left text-sm">
+                  <thead className="bg-luxury-cream/60 border-b border-luxury-ink/5 text-[10px] uppercase tracking-widest text-luxury-ink/50">
+                    <tr>
+                      <th className="p-4 sm:p-6">Client</th>
+                      <th className="p-4 sm:p-6">Service</th>
+                      <th className="p-4 sm:p-6">Schedule</th>
+                      <th className="p-4 sm:p-6">Status</th>
+                      <th className="p-4 sm:p-6 text-right">Actions</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-luxury-ink/5">
+                    {filteredBookings.length > 0 ? (
+                      filteredBookings.map((b) => (
+                        <tr key={b.id} className="hover:bg-luxury-cream/20 transition-colors">
+                          <td className="p-4 sm:p-6">
+                            <p className="font-medium text-luxury-ink">{b.name}</p>
+                            <p className="text-xs text-luxury-ink/40">{b.email}</p>
+                          </td>
+                          <td className="p-4 sm:p-6">
+                            <span className="px-3 py-1 rounded-full bg-luxury-gold/10 text-luxury-gold text-xs font-medium">
+                              {b.service}
+                            </span>
+                          </td>
+                          <td className="p-4 sm:p-6">
+                            <p className="text-luxury-ink">{b.date}</p>
+                            <p className="text-xs text-luxury-ink/40">{b.time}</p>
+                          </td>
+                          <td className="p-4 sm:p-6">
+                            <span className={`px-3 py-1 rounded-full text-xs font-medium ${
+                              b.status === 'Confirmed' ? 'bg-green-100 text-green-700' :
+                              b.status === 'Cancelled' ? 'bg-red-100 text-red-700' :
+                              'bg-amber-100 text-amber-700'
+                            }`}>
+                              {b.status}
+                            </span>
+                          </td>
+                          <td className="p-4 sm:p-6 text-right space-x-2">
+                            {b.status !== 'Confirmed' && (
+                              <button
+                                onClick={() => updateStatus(b.id, 'Confirmed')}
+                                className="p-1.5 text-green-600 hover:bg-green-50 rounded-lg transition-colors cursor-pointer"
+                                title="Confirm booking"
+                              >
+                                <CheckCircle2 size={16} />
+                              </button>
+                            )}
+                            {b.status !== 'Cancelled' && (
+                              <button
+                                onClick={() => updateStatus(b.id, 'Cancelled')}
+                                className="p-1.5 text-amber-600 hover:bg-amber-50 rounded-lg transition-colors cursor-pointer"
+                                title="Cancel booking"
+                              >
+                                <XCircle size={16} />
+                              </button>
+                            )}
+                            <button
+                              onClick={() => deleteBooking(b.id)}
+                              className="p-1.5 text-red-500 hover:bg-red-50 rounded-lg transition-colors cursor-pointer"
+                              title="Delete booking"
+                            >
+                              <Trash2 size={16} />
+                            </button>
+                          </td>
+                        </tr>
+                      ))
+                    ) : (
+                      <tr>
+                        <td colSpan={5} className="p-12 text-center text-luxury-ink/40 italic">
+                          No bookings found.
+                        </td>
+                      </tr>
+                    )}
+                  </tbody>
+                </table>
               </div>
             </div>
-          </section>
+          </div>
         )}
 
         {activeTab === 'testimonials' && (
-          <section className="rounded-[2rem] bg-white p-6 md:p-8 border border-luxury-ink/10 shadow-sm">
-            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-8">
-              <h4 className="text-xl md:text-2xl font-serif">Testimonial Approval</h4>
-              <div className="w-fit rounded-full bg-luxury-ink/5 px-4 py-2 text-[10px] md:text-xs uppercase tracking-[0.35em] text-luxury-ink">Reviews</div>
+          <section className="rounded-[2rem] bg-white p-6 md:p-8 border border-luxury-ink/10 shadow-sm space-y-6">
+            <div className="flex items-center justify-between">
+              <div>
+                <h4 className="text-xl font-serif">Client Reviews Moderation</h4>
+                <p className="text-xs text-luxury-ink/40 mt-1">Approve pending reviews to display on the live website</p>
+              </div>
+              <span className="text-xs uppercase tracking-widest text-luxury-gold font-semibold">
+                {pendingTestimonials.length} Pending
+              </span>
             </div>
-            
+
             <div className="space-y-4">
-              {testimonials.filter(t => t.status === 'pending').length > 0 ? (
-                testimonials.filter(t => t.status === 'pending').map((t) => (
-                  <div key={t.id} className="rounded-3xl border border-luxury-ink/10 p-5 bg-white">
-                    <div className="flex items-center justify-between gap-4 mb-3">
+              {testimonials.length > 0 ? (
+                testimonials.map((t) => (
+                  <div key={t.id} className="p-5 rounded-2xl border border-luxury-ink/10 bg-luxury-cream/20 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+                    <div className="space-y-2">
                       <div className="flex items-center gap-3">
-                        <img src={t.image} alt={t.author} className="w-10 h-10 rounded-full object-cover" />
-                        <div>
-                          <p className="font-medium">{t.author}</p>
-                          <div className="flex gap-0.5">
-                            {Array.from({ length: 5 }).map((_, i) => (
-                              <Star key={i} size={10} className={i < t.rating ? 'text-luxury-gold' : 'text-luxury-ink/10'} fill={i < t.rating ? 'currentColor' : 'none'} />
-                            ))}
-                          </div>
+                        <span className="font-semibold text-sm text-luxury-ink">{t.author}</span>
+                        <span className={`text-[10px] uppercase tracking-wider px-2.5 py-0.5 rounded-full font-medium ${
+                          t.status === 'approved' ? 'bg-green-100 text-green-700' : 'bg-amber-100 text-amber-700'
+                        }`}>
+                          {t.status}
+                        </span>
+                        <div className="flex text-luxury-gold">
+                          {Array.from({ length: t.rating || 5 }).map((_, i) => (
+                            <Star key={i} size={12} fill="currentColor" />
+                          ))}
                         </div>
                       </div>
-                      <div className="flex items-center gap-2">
-                        <button 
-                          onClick={() => approveTestimonial(t.id)}
-                          className="p-2 text-green-600 hover:bg-green-50 rounded-full transition-colors"
-                          title="Approve"
-                        >
-                          <CheckCircle2 size={18} />
-                        </button>
-                        <button 
-                          onClick={() => deleteTestimonial(t.id)}
-                          className="p-2 text-red-600 hover:bg-red-50 rounded-full transition-colors"
-                          title="Delete"
-                        >
-                          <Trash2 size={18} />
-                        </button>
-                      </div>
+                      <p className="text-xs text-luxury-ink/75 italic max-w-2xl">"{t.quote}"</p>
                     </div>
-                    <p className="text-sm text-luxury-ink/70 italic">"{t.quote}"</p>
+
+                    <div className="flex items-center gap-2 self-end sm:self-auto">
+                      {t.status === 'pending' && (
+                        <button
+                          onClick={() => approveTestimonial(t.id)}
+                          className="px-4 py-1.5 rounded-full bg-green-600 text-white text-xs hover:bg-green-700 transition-colors cursor-pointer flex items-center gap-1.5"
+                        >
+                          <CheckCircle2 size={14} /> Approve
+                        </button>
+                      )}
+                      <button
+                        onClick={() => deleteTestimonial(t.id)}
+                        className="p-2 text-red-500 hover:bg-red-50 rounded-full transition-colors cursor-pointer"
+                        title="Delete review"
+                      >
+                        <Trash2 size={16} />
+                      </button>
+                    </div>
                   </div>
                 ))
               ) : (
-                <div className="text-center py-12">
-                  <p className="text-sm text-luxury-ink/40 italic">No pending testimonials to review.</p>
+                <div className="text-center py-12 text-luxury-ink/40 italic">
+                  No client reviews yet.
                 </div>
               )}
             </div>
@@ -428,63 +498,197 @@ const AdminDashboard = ({
 
         {activeTab === 'gallery' && (
           <div className="space-y-8">
-            <section className="rounded-[2rem] bg-white p-6 md:p-8 border border-luxury-ink/10 shadow-sm">
-              <ImageUploadForm
-                title="Import to Gallery"
-                description="Add new looks to your public portfolio"
-                uploadedImages={uploadedImages}
-                onUpload={(newImages) => setUploadedImages(prev => [...prev, ...newImages])}
-                onRemove={removeUploaded}
-              />
-            </section>
+            {/* Direct Dashboard Media Upload Form */}
+            <ImageUploadForm
+              title="Add New Makeup Photo"
+              description="Upload portfolio photos categorized by makeup type and client demographic (Female, Male, Gender-Inclusive)"
+              categories={categories}
+            />
 
-            <section className="rounded-[2rem] bg-white p-6 md:p-8 border border-luxury-ink/10 shadow-sm">
-              <div className="flex items-center justify-between mb-8">
-                <h4 className="text-xl font-serif">Manage Collection</h4>
-                <p className="text-[10px] uppercase tracking-widest text-luxury-ink/40">{uploadedImages.length} images</p>
+            {/* Manage Uploaded Photos */}
+            <section className="rounded-[2rem] bg-white p-6 md:p-8 border border-luxury-ink/10 shadow-sm space-y-6">
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+                <div>
+                  <h4 className="text-xl font-serif">Portfolio Collection Management</h4>
+                  <p className="text-xs text-luxury-ink/40 mt-1">Showing {filteredGalleryImages.length} of {uploadedImages.length} total uploads</p>
+                </div>
+
+                {/* Filter Controls */}
+                <div className="flex flex-wrap items-center gap-3">
+                  <select
+                    value={galleryGenderFilter}
+                    onChange={(e) => setGalleryGenderFilter(e.target.value as any)}
+                    className="text-xs bg-luxury-cream/50 border border-luxury-ink/10 rounded-xl px-3 py-2 text-luxury-ink focus:outline-none"
+                  >
+                    <option value="All">All Genders</option>
+                    <option value="Female">Female</option>
+                    <option value="Male">Male</option>
+                    <option value="Gender-Inclusive">Gender-Inclusive</option>
+                  </select>
+
+                  <select
+                    value={galleryCatFilter}
+                    onChange={(e) => setGalleryCatFilter(e.target.value)}
+                    className="text-xs bg-luxury-cream/50 border border-luxury-ink/10 rounded-xl px-3 py-2 text-luxury-ink focus:outline-none"
+                  >
+                    <option value="All">All Categories</option>
+                    {categories.map(c => (
+                      <option key={c} value={c}>{c}</option>
+                    ))}
+                  </select>
+                </div>
               </div>
+
+              {/* Grid of Images */}
               <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-4">
-                {uploadedImages.length > 0 ? (
-                  uploadedImages.map((img) => (
-                    <div key={img.id} className="relative group aspect-square rounded-2xl overflow-hidden border border-luxury-ink/10 bg-luxury-cream/30">
+                {filteredGalleryImages.length > 0 ? (
+                  filteredGalleryImages.map((img) => (
+                    <div key={img.id} className="relative group rounded-2xl overflow-hidden border border-luxury-ink/10 bg-luxury-cream/30 aspect-square shadow-xs">
                       <img 
                         src={img.src} 
-                        alt="Gallery" 
+                        alt={img.title || "Gallery"} 
                         className={`w-full h-full object-cover transition-opacity duration-300 ${img.isHidden ? 'opacity-40 grayscale' : 'opacity-100'}`} 
                       />
                       
-                      <div className="absolute inset-0 bg-luxury-ink/40 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center gap-2">
+                      {/* Action Overlay */}
+                      <div className="absolute inset-0 bg-luxury-ink/60 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center gap-3">
                         <button
-                          onClick={() => toggleHideImage(img.id)}
-                          className="p-2 bg-white/90 hover:bg-white text-luxury-ink rounded-full transition-all hover:scale-110"
-                          title={img.isHidden ? "Show in gallery" : "Hide from gallery"}
+                          onClick={() => toggleHideImage(img.id, !!img.isHidden)}
+                          className="p-2.5 bg-white text-luxury-ink rounded-full transition-all hover:scale-110 cursor-pointer shadow-md"
+                          title={img.isHidden ? "Show in public gallery" : "Hide from public gallery"}
                         >
                           {img.isHidden ? <Eye size={16} /> : <EyeOff size={16} />}
                         </button>
                         <button
                           onClick={() => removeUploaded(img.id)}
-                          className="p-2 bg-red-500/90 hover:bg-red-500 text-white rounded-full transition-all hover:scale-110"
+                          className="p-2.5 bg-red-500 text-white rounded-full transition-all hover:scale-110 cursor-pointer shadow-md"
                           title="Delete permanently"
                         >
                           <Trash2 size={16} />
                         </button>
                       </div>
 
-                      {img.isHidden && (
-                        <div className="absolute top-2 left-2 bg-luxury-ink/80 backdrop-blur-sm text-[8px] text-white uppercase tracking-widest px-2 py-1 rounded">
-                          Archived
-                        </div>
-                      )}
-                      <div className="absolute bottom-2 left-2 right-2 bg-white/80 backdrop-blur-sm text-[8px] text-luxury-ink uppercase tracking-widest px-2 py-1 rounded truncate text-center">
+                      {/* Status & Category Badges */}
+                      <div className="absolute top-2 left-2 flex flex-col gap-1">
+                        <span className="bg-luxury-ink/80 backdrop-blur-md text-[8px] text-white uppercase tracking-widest px-2 py-0.5 rounded-md font-medium">
+                          {img.gender || 'Female'}
+                        </span>
+                        {img.isHidden && (
+                          <span className="bg-red-500/90 text-[8px] text-white uppercase tracking-widest px-2 py-0.5 rounded-md font-medium">
+                            Hidden
+                          </span>
+                        )}
+                      </div>
+
+                      <div className="absolute bottom-2 left-2 right-2 bg-white/90 backdrop-blur-md text-[8px] text-luxury-ink uppercase tracking-widest px-2 py-1 rounded-md truncate text-center font-medium">
                         {img.category}
                       </div>
                     </div>
                   ))
                 ) : (
-                  <div className="col-span-full text-center py-12">
-                    <p className="text-sm text-luxury-ink/40 italic">No images uploaded yet.</p>
+                  <div className="col-span-full text-center py-16 bg-luxury-cream/20 rounded-2xl border border-dashed border-luxury-ink/15">
+                    <p className="text-sm text-luxury-ink/40 italic">No images found for this category or demographic filter.</p>
                   </div>
                 )}
+              </div>
+            </section>
+          </div>
+        )}
+
+        {/* Categories Tab: Dynamic Category Management */}
+        {activeTab === 'categories' && (
+          <div className="space-y-8">
+            {/* Create Category Form */}
+            <section className="rounded-[2rem] bg-white p-6 md:p-8 border border-luxury-ink/10 shadow-sm space-y-6">
+              <div className="flex items-center gap-2 text-luxury-gold text-xs uppercase tracking-widest font-medium">
+                <Plus size={16} /> Expand Your Services
+              </div>
+              <div>
+                <h4 className="text-xl sm:text-2xl font-serif italic text-luxury-ink">Add Custom Makeup Category</h4>
+                <p className="text-xs text-luxury-ink/50 mt-1">
+                  Create custom categories (e.g. "Airbrush Bridal", "Debut / Quinceañera", "Editorial Runway"). These will automatically appear in your portfolio filters, image uploads, and client booking dropdown.
+                </p>
+              </div>
+
+              <form onSubmit={handleAddCategory} className="space-y-4">
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <div>
+                    <label className="block text-[10px] uppercase tracking-widest text-luxury-gold mb-2 font-semibold">
+                      Category Name *
+                    </label>
+                    <input
+                      type="text"
+                      required
+                      value={newCatName}
+                      onChange={(e) => setNewCatName(e.target.value)}
+                      placeholder="e.g. Airbrush Makeup, Debut Look..."
+                      className="w-full bg-luxury-cream/40 border border-luxury-ink/10 rounded-xl px-4 py-3 text-sm focus:outline-none focus:ring-2 focus:ring-luxury-gold/30 text-luxury-ink"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block text-[10px] uppercase tracking-widest text-luxury-gold mb-2 font-semibold">
+                      Brief Description (Optional)
+                    </label>
+                    <input
+                      type="text"
+                      value={newCatDesc}
+                      onChange={(e) => setNewCatDesc(e.target.value)}
+                      placeholder="e.g. High-definition flawless airbrush application"
+                      className="w-full bg-luxury-cream/40 border border-luxury-ink/10 rounded-xl px-4 py-3 text-sm focus:outline-none focus:ring-2 focus:ring-luxury-gold/30 text-luxury-ink"
+                    />
+                  </div>
+                </div>
+
+                <div className="flex items-center justify-between pt-2">
+                  {catMessage && (
+                    <span className={`text-xs ${catMessage.type === 'success' ? 'text-green-600 font-medium' : 'text-red-500'}`}>
+                      {catMessage.text}
+                    </span>
+                  )}
+                  <button
+                    type="submit"
+                    disabled={isAddingCat}
+                    className="ml-auto px-6 py-3 rounded-full bg-luxury-ink text-white hover:bg-luxury-gold hover:text-luxury-ink transition-colors text-xs uppercase tracking-widest font-semibold cursor-pointer shadow-md disabled:opacity-50"
+                  >
+                    {isAddingCat ? 'Creating...' : '+ Create Category'}
+                  </button>
+                </div>
+              </form>
+            </section>
+
+            {/* List of Categories */}
+            <section className="rounded-[2rem] bg-white p-6 md:p-8 border border-luxury-ink/10 shadow-sm space-y-6">
+              <h4 className="text-xl font-serif">Active Service & Makeup Categories</h4>
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-4">
+                {/* Standard Base Categories */}
+                {['Bridal Makeup', 'Event Makeup', 'Pageant Makeup', 'Photoshoot Makeup', 'Transformation'].map(baseCat => (
+                  <div key={baseCat} className="p-4 rounded-2xl border border-luxury-ink/10 bg-luxury-cream/20 flex items-center justify-between">
+                    <div>
+                      <p className="font-medium text-sm text-luxury-ink">{baseCat}</p>
+                      <span className="text-[9px] uppercase tracking-wider text-luxury-gold font-semibold">Standard Core</span>
+                    </div>
+                    <span className="text-[10px] px-2 py-0.5 rounded-full bg-luxury-ink/5 text-luxury-ink/50">Protected</span>
+                  </div>
+                ))}
+
+                {/* Custom Admin Categories */}
+                {customCategories.map(cat => (
+                  <div key={cat.id} className="p-4 rounded-2xl border border-luxury-gold/30 bg-luxury-gold/5 flex items-center justify-between">
+                    <div>
+                      <p className="font-medium text-sm text-luxury-ink">{cat.name}</p>
+                      <p className="text-[10px] text-luxury-ink/50 truncate max-w-[160px]">{cat.description || 'Custom Category'}</p>
+                    </div>
+                    <button
+                      onClick={() => handleDeleteCategory(cat.id, cat.name)}
+                      className="p-2 text-red-500 hover:bg-red-50 rounded-full transition-colors cursor-pointer"
+                      title="Delete category"
+                    >
+                      <Trash2 size={16} />
+                    </button>
+                  </div>
+                ))}
               </div>
             </section>
           </div>
@@ -501,88 +705,64 @@ const ClientDashboard = ({ email, bookings }: { email: string | null, bookings: 
     <div className="space-y-6 md:space-y-10">
       <div className="grid gap-6 md:grid-cols-2">
         <div className="rounded-[2rem] bg-white p-6 md:p-8 border border-luxury-ink/10 shadow-sm">
-          <p className="text-[10px] md:text-xs uppercase tracking-[0.35em] text-luxury-ink/50 mb-3">Welcome back</p>
-          <h3 className="text-2xl md:text-3xl font-serif">{email ? `Hello, ${email.split('@')[0]}` : 'Hello there'}</h3>
-          <p className="mt-4 text-xs md:text-sm text-luxury-ink/60">Your client dashboard gives you a quick view of upcoming appointments, messages, and booking status.</p>
+          <p className="text-xs uppercase tracking-[0.35em] text-luxury-ink/50">My Reservations</p>
+          <p className="text-4xl md:text-5xl font-serif mt-2">{userBookings.length}</p>
+          <p className="text-xs text-luxury-ink/40 mt-3 font-light">
+            Confirmed and upcoming appointments scheduled under {email}.
+          </p>
         </div>
 
         <div className="rounded-[2rem] bg-white p-6 md:p-8 border border-luxury-ink/10 shadow-sm">
-          <p className="text-[10px] md:text-xs uppercase tracking-[0.35em] text-luxury-ink/50 mb-3">Next action</p>
-          <p className="text-lg md:text-xl font-serif">View your latest booking requests</p>
-          <p className="text-xs md:text-sm text-luxury-ink/60 mt-4">If you don’t see your event listed, book another consultation with the studio below.</p>
-          <button
-            onClick={() => document.getElementById('booking')?.scrollIntoView({ behavior: 'smooth' })}
-            className="mt-6 luxury-button w-full sm:w-auto"
-          >
-            Book a new appointment
-          </button>
+          <p className="text-xs uppercase tracking-[0.35em] text-luxury-ink/50">Status</p>
+          <p className="text-4xl md:text-5xl font-serif mt-2 text-luxury-gold">Active</p>
+          <p className="text-xs text-luxury-ink/40 mt-3 font-light">
+            Welcome to your Haus of Von bespoke client area.
+          </p>
         </div>
       </div>
 
-      <section className="rounded-[2rem] bg-white p-6 md:p-8 border border-luxury-ink/10 shadow-sm">
-        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-6">
-          <div>
-            <h4 className="text-xl md:text-2xl font-serif">Upcoming appointments</h4>
-            <p className="text-xs md:text-sm text-luxury-ink/60">Your next scheduled services at a glance.</p>
+      <div className="rounded-[2rem] bg-white p-6 md:p-8 border border-luxury-ink/10 shadow-sm">
+        <h3 className="text-xl font-serif italic mb-6">Upcoming Appointments</h3>
+        {userBookings.length > 0 ? (
+          <div className="divide-y divide-luxury-ink/5">
+            {userBookings.map((b) => (
+              <div key={b.id} className="py-4 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                <div>
+                  <h4 className="font-medium text-luxury-ink">{b.service}</h4>
+                  <p className="text-xs text-luxury-ink/50">{b.date} at {b.time}</p>
+                </div>
+                <span className={`px-3 py-1 rounded-full text-xs font-medium self-start sm:self-auto ${
+                  b.status === 'Confirmed' ? 'bg-green-100 text-green-700' :
+                  b.status === 'Cancelled' ? 'bg-red-100 text-red-700' :
+                  'bg-amber-100 text-amber-700'
+                }`}>
+                  {b.status}
+                </span>
+              </div>
+            ))}
           </div>
-          <span className="w-fit text-[10px] md:text-xs uppercase tracking-[0.35em] text-luxury-ink/50">{userBookings.length} items</span>
-        </div>
-
-        <div className="space-y-4">
-          {userBookings.filter(b => b.status === 'Confirmed' || b.status === 'Pending').length > 0 ? (
-            userBookings.filter(b => b.status === 'Confirmed' || b.status === 'Pending').map((item) => (
-              <div key={item.id} className="rounded-3xl border border-luxury-ink/10 p-5 bg-luxury-cream/60">
-                <div className="flex items-center justify-between gap-4">
-                  <p className="font-medium">{item.service}</p>
-                  <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full uppercase tracking-wider ${
-                    item.status === 'Confirmed' ? 'bg-green-50 text-green-600' :
-                    item.status === 'Pending' ? 'bg-amber-50 text-amber-600' :
-                    'bg-red-50 text-red-600'
-                  }`}>
-                    {item.status}
-                  </span>
-                </div>
-                <p className="text-sm text-luxury-ink/60 mt-2">{item.date} · {item.time}</p>
-              </div>
-            ))
-          ) : (
-            <div className="text-center py-12">
-              <p className="text-sm text-luxury-ink/40 italic">No upcoming appointments found.</p>
-            </div>
-          )}
-        </div>
-      </section>
-
-      <section className="rounded-[2rem] bg-white p-6 md:p-8 border border-luxury-ink/10 shadow-sm">
-        <div className="flex items-center justify-between mb-6">
-          <h4 className="text-xl md:text-2xl font-serif">Appointment History</h4>
-          <span className="w-fit text-[10px] md:text-xs uppercase tracking-[0.35em] text-luxury-ink/50">Past records</span>
-        </div>
-        <div className="space-y-4">
-          {userBookings.filter(b => b.status === 'Cancelled').length > 0 ? (
-            userBookings.filter(b => b.status === 'Cancelled').map((item) => (
-              <div key={item.id} className="rounded-3xl border border-luxury-ink/10 p-5 bg-white opacity-60">
-                <div className="flex items-center justify-between gap-4">
-                  <p className="font-medium">{item.service}</p>
-                  <span className="text-[10px] font-bold px-2 py-0.5 rounded-full uppercase tracking-wider bg-red-50 text-red-600">
-                    {item.status}
-                  </span>
-                </div>
-                <p className="text-sm text-luxury-ink/60 mt-2">{item.date} · {item.time}</p>
-              </div>
-            ))
-          ) : (
-            <div className="text-center py-8">
-              <p className="text-xs text-luxury-ink/30 italic">No past appointments to show.</p>
-            </div>
-          )}
-        </div>
-      </section>
+        ) : (
+          <div className="text-center py-12 text-luxury-ink/40 italic">
+            You currently have no scheduled appointments.
+          </div>
+        )}
+      </div>
     </div>
   );
 };
 
-export const Dashboard = ({ role, email, onBack, onLogout, bookings, setBookings, testimonials, setTestimonials, uploadedImages, setUploadedImages }: DashboardProps) => {
+export const Dashboard = ({ 
+  role, 
+  email, 
+  onBack, 
+  onLogout, 
+  bookings, 
+  testimonials, 
+  uploadedImages,
+  categories,
+  customCategories,
+  onOpenSOP
+}: DashboardProps) => {
   return (
     <div className="min-h-screen bg-luxury-cream pt-28 pb-20">
       <div className="max-w-7xl mx-auto px-6">
@@ -590,15 +770,15 @@ export const Dashboard = ({ role, email, onBack, onLogout, bookings, setBookings
           <div>
             <p className="text-xs uppercase tracking-[0.4em] text-luxury-ink/50">{role === 'admin' ? 'Management Portal' : 'Client Space'}</p>
             <h1 className="text-3xl sm:text-4xl md:text-5xl font-serif italic mt-4">{role === 'admin' ? 'Von Beauty Admin' : 'Your client space'}</h1>
-            <p className="mt-4 max-w-2xl text-sm text-luxury-ink/60">
+            <p className="mt-4 max-w-2xl text-sm text-luxury-ink/60 font-light">
               {role === 'admin'
-                ? 'Welcome back, Von. Here is a summary of your studio activity and management tools.'
-                : 'See your schedule, recent updates, and next steps after signing in.'}
+                ? 'Welcome back, Von. Manage client bookings, review approvals, portfolio uploads with gender categorization, and custom makeup types.'
+                : 'See your schedule, recent updates, and appointment status.'}
             </p>
           </div>
           <button
             onClick={onBack}
-            className="inline-flex items-center gap-2 rounded-full border border-luxury-ink/10 bg-white px-5 py-3 text-sm uppercase tracking-[0.35em] text-luxury-ink transition hover:border-luxury-gold hover:text-luxury-gold"
+            className="inline-flex items-center gap-2 rounded-full border border-luxury-ink/10 bg-white px-5 py-3 text-sm uppercase tracking-[0.35em] text-luxury-ink transition hover:border-luxury-gold hover:text-luxury-gold cursor-pointer"
           >
             <ArrowLeft size={16} /> Back to site
           </button>
@@ -607,11 +787,11 @@ export const Dashboard = ({ role, email, onBack, onLogout, bookings, setBookings
         {role === 'admin' ? (
           <AdminDashboard 
             bookings={bookings} 
-            setBookings={setBookings} 
             testimonials={testimonials} 
-            setTestimonials={setTestimonials} 
             uploadedImages={uploadedImages}
-            setUploadedImages={setUploadedImages}
+            categories={categories}
+            customCategories={customCategories}
+            onOpenSOP={onOpenSOP}
             onLogout={onLogout}
           />
         ) : (

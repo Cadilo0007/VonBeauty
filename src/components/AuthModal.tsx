@@ -1,30 +1,37 @@
+
 import React, { useState } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import { X, Lock, Mail } from 'lucide-react';
+import { signInWithEmailAndPassword } from 'firebase/auth';
+import { auth } from '../lib/firebase';
 
 interface AuthModalProps {
   isOpen: boolean;
   onClose: () => void;
-  onSubmit: (email: string) => void;
+  onSuccess: () => void;
 }
 
-export function AuthModal({ isOpen, onClose, onSubmit }: AuthModalProps) {
+export function AuthModal({ isOpen, onClose, onSuccess }: AuthModalProps) {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [error, setError] = useState('');
+  const [loading, setLoading] = useState(false);
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    setError('');
+    setLoading(true);
     
-    // Simple mock authentication for demo purposes
-    // In a real app, this would verify credentials against a backend
-    if (email === 'admin@vonbeauty.com' && password === 'Admin123!') {
-      onSubmit(email);
+    try {
+      await signInWithEmailAndPassword(auth, email, password);
+      onSuccess();
       setEmail('');
       setPassword('');
-      setError('');
-    } else {
-      setError('Invalid credentials. Please try again.');
+      onClose();
+    } catch (err: any) {
+      setError(err.message || 'Failed to sign in. Please check your credentials.');
+    } finally {
+      setLoading(false);
     }
   };
 
@@ -103,9 +110,10 @@ export function AuthModal({ isOpen, onClose, onSubmit }: AuthModalProps) {
                 
                 <button
                   type="submit"
-                  className="w-full bg-luxury-ink text-white py-4 rounded-xl font-serif italic text-lg hover:bg-luxury-gold transition-all duration-500 shadow-lg shadow-luxury-ink/10"
+                  disabled={loading}
+                  className="w-full bg-luxury-ink text-white py-4 rounded-xl font-serif italic text-lg hover:bg-luxury-gold transition-all duration-500 shadow-lg shadow-luxury-ink/10 disabled:opacity-50 disabled:cursor-not-allowed"
                 >
-                  Sign In
+                  {loading ? 'Signing In...' : 'Sign In'}
                 </button>
               </form>
               
@@ -121,3 +129,4 @@ export function AuthModal({ isOpen, onClose, onSubmit }: AuthModalProps) {
     </AnimatePresence>
   );
 }
+
